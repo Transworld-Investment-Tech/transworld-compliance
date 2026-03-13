@@ -125,7 +125,7 @@ Rules:
 - numbers must be plain numbers, no commas or currency symbols
 - Do NOT include estimated cost or balance as price_limit`;
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
