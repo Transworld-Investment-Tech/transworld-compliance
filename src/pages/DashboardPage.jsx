@@ -106,10 +106,11 @@ export default function DashboardPage({ user }) {
             soon
           />
           <ModuleCard
+            to="/f06"
             icon="⚠️"
             label="F-06 Error Trade GL"
-            desc="Error trade recording, root cause documentation, NGX threshold monitoring."
-            soon
+            desc="Log error trades, classify urgency, track NGX Rule 12.2(e) thresholds, generate F-06 PDF."
+            live
           />
         </div>
       </div>
