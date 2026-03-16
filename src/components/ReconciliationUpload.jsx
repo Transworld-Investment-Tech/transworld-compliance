@@ -610,10 +610,6 @@ export default function ReconciliationUpload({ currentUser }) {
             </div>
           ))}
 
-          {/* ── Period Report Generator ── */}
-          <div style={{ marginTop: 24, borderTop: `1px solid ${BORDER}`, paddingTop: 20 }}>
-            <F05ReportGenerator />
-          </div>
         </div>
       </div>
 

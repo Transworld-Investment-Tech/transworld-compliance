@@ -136,8 +136,7 @@ export function printDailyF05(session) {
     <div class="report-title">Daily Trade Reconciliation Report</div>
     <div class="report-sub">
       Trade Date: <strong>${fmtD(session.trade_date)}</strong> &nbsp;·&nbsp;
-      Approved by: <strong>${session.approver_name || '—'}</strong> &nbsp;·&nbsp;
-      ${approvedAt}
+      Approved: <strong>${approvedAt}</strong>
       ${session.approver_note ? `<br/>Note: ${session.approver_note}` : ''}
     </div>
 
@@ -206,8 +205,8 @@ export function printDailyF05(session) {
       <div class="sig-row">
         <div class="sig-field">
           <div class="sig-label">Prepared / Approved By</div>
-          <div class="sig-name">${session.approver_name || '___________________'}</div>
-          <div style="font-size:7.5pt;color:#6b7280;margin-top:2px">${approvedAt}</div>
+          <div class="sig-name" style="color:#aaa">___________________</div>
+          <div style="font-size:7.5pt;color:#aaa;margin-top:2px">Signature &amp; Date</div>
         </div>
         <div class="sig-field">
           <div class="sig-label">Head of Trading</div>
