@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import F04ReportGenerator from "./F04ReportGenerator";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -389,6 +390,9 @@ Rules:
               >
                 Extract Mandate Lines →
               </button>
+
+              {/* ── Period Report Generator ── */}
+              <F04ReportGenerator />
             </div>
           )}
 
