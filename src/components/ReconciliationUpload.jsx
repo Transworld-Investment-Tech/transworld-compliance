@@ -360,6 +360,13 @@ export default function ReconciliationUpload({ currentUser }) {
             </div>
           )}
 
+          {/* ── Period Reports ── */}
+          {(stage === 'upload' || stage === 'done') && (
+            <div style={{ marginTop: 40, borderTop: `2px solid ${BORDER}`, paddingTop: 32 }}>
+              <F05ReportGenerator />
+            </div>
+          )}
+
           {/* PARSED / REVIEW */}
           {stage === 'parsed' && (
             <div>
