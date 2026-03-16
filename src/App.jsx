@@ -8,7 +8,7 @@ import {
   dbSetFormPublic, dbLoadForms, dbSeedForms,
   dbSetLineManager, dbLoadDoaConfig, dbSaveDoaConfig, dbUpdateSubmissionFull,
   dbUploadFormAttachment,
-} from './supabase.js';
+} from './lib/supabase';
 import FormBuilder from './FormBuilder.jsx';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
