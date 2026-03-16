@@ -714,6 +714,11 @@ function MandateDetailModal({ mandate, onClose }) {
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <StatusBadge status={mandate.status} />
+            <button onClick={() => printF04Mandate(mandate)} style={{
+              background: GOLD, border: "none", color: NAV,
+              borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 12,
+              fontWeight: 700, fontFamily: "'IBM Plex Sans', sans-serif",
+            }}>🖨 Print / PDF</button>
             <button onClick={onClose} style={{
               background: "rgba(255,255,255,0.1)", border: "none", color: "#fff",
               borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 12
@@ -823,6 +828,156 @@ const tdStyle = {
 
 function formatDate(d) {
   if (!d) return "—";
-  const dt = new Date(d);
-  return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  const s = String(d);
+  // YYYY-MM-DD stored as UTC midnight shifts day back in US/EU timezones — force local noon
+  const safe = s.length === 10 ? s + "T12:00:00" : s;
+  return new Date(safe).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatDateLong(d) {
+  if (!d) return "—";
+  const s = String(d);
+  const safe = s.length === 10 ? s + "T12:00:00" : s;
+  return new Date(safe).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+// ── F-04 PDF Print ────────────────────────────────────────────────────────────
+function printF04Mandate(mandate) {
+  if (!mandate) return;
+  const now      = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+  const period   = formatDateLong(mandate.trade_date);
+  const approvedAt = mandate.approved_at ? new Date(mandate.approved_at).toLocaleString("en-GB") : "—";
+
+  const lineRows = (mandate.lines || []).map((l, i) => {
+    const isPartial = l.partial_flag;
+    const sideBg  = l.side === "BUY" ? "#e8f5e9" : "#fdecea";
+    const sideClr = l.side === "BUY" ? "#1a7a4a" : "#c0392b";
+    const rowBg   = isPartial ? "#fffbeb" : i % 2 === 0 ? "#fff" : "#f9fafb";
+    return "<tr style=\"background:" + rowBg + ";border-bottom:1px solid #f0f0f0\">" +
+      "<td style=\"padding:4px 7px;font-family:monospace;font-size:8pt\">" + (l.cscs_no || "—") + "</td>" +
+      "<td style=\"padding:4px 7px;font-weight:600;font-size:8pt\">" + (l.client_name || "—") + "</td>" +
+      "<td style=\"padding:4px 7px\"><span style=\"background:" + sideBg + ";color:" + sideClr + ";font-weight:700;border-radius:4px;padding:1px 7px;font-size:7.5pt\">" + (l.side || "—") + "</span></td>" +
+      "<td style=\"padding:4px 7px;font-weight:700;font-family:monospace;font-size:8.5pt\">" + (l.symbol || "—") + "</td>" +
+      "<td style=\"padding:4px 7px;text-align:right;font-size:8pt\">" + (l.avail_units != null ? Number(l.avail_units).toLocaleString() : "—") + "</td>" +
+      "<td style=\"padding:4px 7px;text-align:right;font-weight:700;font-size:8pt;" + (isPartial ? "color:#b45309" : "") + "\">" + (l.jobbed_units != null ? Number(l.jobbed_units).toLocaleString() : "—") + (isPartial ? " ⚠️" : "") + "</td>" +
+      "<td style=\"padding:4px 7px;text-align:right;font-size:8pt\">" + (l.price_limit || "Market") + "</td>" +
+      "<td style=\"padding:4px 7px;font-size:8pt\">" + (l.eff_date || "—") + "</td>" +
+      "<td style=\"padding:4px 7px;font-size:7.5pt;color:#6b7280\">" + (l.entered_by || "—") + "</td>" +
+      "<td style=\"padding:4px 7px;font-size:7.5pt;color:#6b7280\">" + (l.account_officer || "—") + "</td>" +
+    "</tr>";
+  }).join("");
+
+  const partialCount = (mandate.lines || []).filter(l => l.partial_flag).length;
+
+  const css = `
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a1a2e; }
+    @page {
+      size: A4 landscape; margin: 14mm 16mm;
+      @top-left   { content: "Transworld Investment and Securities Limited"; font-family: Arial; font-size: 7pt; color: #6b7280; }
+      @top-right  { content: "Form F-04 · Client Trade Mandate & Order Authorisation · ${period}"; font-family: Arial; font-size: 7pt; color: #6b7280; }
+      @bottom-left   { content: "Confidential — Internal Use Only"; font-family: Arial; font-size: 7pt; color: #9ca3af; }
+      @bottom-center { content: "Page " counter(page) " of " counter(pages); font-family: Arial; font-size: 7pt; color: #9ca3af; }
+      @bottom-right  { content: "Printed: ${now}"; font-family: Arial; font-size: 7pt; color: #9ca3af; }
+    }
+    .page { padding: 0; max-width: 100%; }
+    table { width: 100%; border-collapse: collapse; }
+    th { padding: 5px 7px; background: #0d1f3c; color: #fff; text-align: left; font-weight: 600; font-size: 7pt; }
+    tr { page-break-inside: avoid; }
+    .sig-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 6px; }
+    .sig-field { border-top: 1px solid #0d1f3c; padding-top: 4px; }
+    .sig-label { font-size: 7pt; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+    .sig-line { margin-top: 22px; border-bottom: 1px solid #374151; }
+    .sig-sub { font-size: 7pt; color: #9ca3af; margin-top: 3px; }
+    @media print { body { font-size: 9pt; } }
+  `.replace(/\$\{period\}/g, period).replace(/\$\{now\}/g, now);
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+    <title>F-04 Mandate — ${period}</title>
+    <style>${css}</style>
+  </head><body>
+  <div class="page">
+    <div style="border-bottom:3px solid #0d1f3c;padding-bottom:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-end">
+      <div>
+        <div style="font-size:13pt;font-weight:700;color:#0d1f3c">Transworld Investment and Securities Limited</div>
+        <div style="font-size:7pt;color:#6b7280;text-transform:uppercase;letter-spacing:1.5px;margin-top:2px">Compliance Operations · Form F-04 · Client Trade Mandate &amp; Order Authorisation</div>
+      </div>
+      <div style="text-align:right;font-size:8pt;color:#6b7280">Printed: ${now}<br/>Trade Date: ${period}</div>
+    </div>
+
+    <div style="font-size:16pt;font-weight:700;color:#0d1f3c;margin-bottom:2px">Client Trade Mandate &amp; Order Authorisation</div>
+    <div style="font-size:8.5pt;color:#6b7280;margin-bottom:14px">Trade Date: <strong>${period}</strong></div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;page-break-inside:avoid">
+      <div style="border-radius:5px;padding:8px 12px;border:1px solid #e5e7eb;border-left:4px solid #0d1f3c">
+        <div style="font-size:20pt;font-weight:700;color:#0d1f3c">${(mandate.lines || []).length}</div>
+        <div style="font-size:7pt;color:#6b7280;text-transform:uppercase">Total Mandates</div>
+      </div>
+      <div style="border-radius:5px;padding:8px 12px;border:1px solid #e5e7eb;border-left:4px solid #1a7a4a">
+        <div style="font-size:20pt;font-weight:700;color:#1a7a4a">${(mandate.lines || []).filter(l => l.side === "BUY").length}</div>
+        <div style="font-size:7pt;color:#6b7280;text-transform:uppercase">Buy Orders</div>
+      </div>
+      <div style="border-radius:5px;padding:8px 12px;border:1px solid #e5e7eb;border-left:4px solid #c0392b">
+        <div style="font-size:20pt;font-weight:700;color:#c0392b">${(mandate.lines || []).filter(l => l.side === "SELL").length}</div>
+        <div style="font-size:7pt;color:#6b7280;text-transform:uppercase">Sell Orders</div>
+      </div>
+      <div style="border-radius:5px;padding:8px 12px;border:1px solid #e5e7eb;border-left:4px solid #b45309">
+        <div style="font-size:20pt;font-weight:700;color:#b45309">${partialCount}</div>
+        <div style="font-size:7pt;color:#6b7280;text-transform:uppercase">Partial Jobs ⚠️</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:24px;font-size:8.5pt;color:#374151;margin-bottom:14px;padding:8px 12px;background:#f9fafb;border-radius:6px">
+      <span><strong>Approver:</strong> ${mandate.approver_name || "—"}</span>
+      <span><strong>Approved:</strong> ${approvedAt}</span>
+      <span><strong>Lines:</strong> ${mandate.line_count || (mandate.lines || []).length}</span>
+      <span><strong>Source:</strong> ${mandate.pdf_name || "—"}</span>
+    </div>
+
+    ${mandate.approver_note ? `<div style="padding:8px 12px;background:#fffbeb;border-left:3px solid #b45309;border-radius:0 5px 5px 0;font-size:8.5pt;color:#374151;margin-bottom:14px"><strong>Note:</strong> ${mandate.approver_note}</div>` : ""}
+
+    <div style="border-radius:5px 5px 0 0;padding:7px 10px;background:#f0f4ff;border:1px solid #c7d2fe;display:flex;align-items:center;gap:8px">
+      <span style="font-weight:700;font-size:10pt;color:#1e40af">📋 Mandate Lines</span>
+      <span style="margin-left:auto;font-size:8.5pt;font-weight:700;color:#1e40af;padding:1px 9px;background:rgba(255,255,255,0.5);border-radius:20px">${(mandate.lines || []).length} records</span>
+    </div>
+    <div style="border:1px solid #c7d2fe;border-top:none;border-radius:0 0 5px 5px">
+      <table>
+        <thead><tr>
+          <th>CSCS No</th><th>Client</th><th>Side</th><th>Symbol</th>
+          <th style="text-align:right">Avail Units</th><th style="text-align:right">Jobbed Units</th>
+          <th style="text-align:right">Price Limit</th><th>Eff Date</th><th>Entered By</th><th>Acct Officer</th>
+        </tr></thead>
+        <tbody>${lineRows}</tbody>
+      </table>
+    </div>
+
+    ${partialCount > 0 ? `<div style="margin-top:10px;padding:8px 12px;background:#fffbeb;border-left:3px solid #b45309;border-radius:0 5px 5px 0;font-size:8pt;color:#374151">
+      ⚠️ <strong>${partialCount} partial job(s)</strong> — Jobbed Units are less than Available Units. These lines are highlighted in amber above.
+    </div>` : ""}
+
+    <div style="margin-top:16px;border:1.5px solid #0d1f3c;border-radius:7px;padding:12px 16px;page-break-inside:avoid">
+      <div style="font-weight:700;font-size:10pt;color:#0d1f3c;margin-bottom:6px">Compliance Certification</div>
+      <div style="font-size:8pt;color:#374151;line-height:1.65;margin-bottom:14px">
+        I confirm that this Client Trade Mandate &amp; Order Authorisation for <strong>${period}</strong> is accurate and complete.
+        All client instructions listed above have been reviewed, verified and authorised for execution on NGX.
+        This document serves as the pre-job mandate record in accordance with the Firm's Internal Control Framework — Section 5a (Trading Controls).
+      </div>
+      <div class="sig-row">
+        <div class="sig-field"><div class="sig-label">Prepared By (Operations)</div><div class="sig-line"></div><div class="sig-sub">Signature &amp; Date</div></div>
+        <div class="sig-field"><div class="sig-label">Chief Operations Officer</div><div class="sig-line"></div><div class="sig-sub">Signature &amp; Date</div></div>
+        <div class="sig-field"><div class="sig-label">Compliance Officer</div><div class="sig-line"></div><div class="sig-sub">Signature &amp; Date</div></div>
+      </div>
+    </div>
+
+    <div style="margin-top:12px;border-top:1px solid #e5e7eb;padding-top:7px;display:flex;justify-content:space-between;font-size:7pt;color:#9ca3af">
+      <div>Transworld Investment and Securities Limited — F-04 Client Trade Mandate · ${period}</div>
+      <div>Session: ${mandate.id} · Confidential</div>
+    </div>
+  </div>
+  </body></html>`;
+
+  const w = window.open("", "_blank");
+  w.document.write(html);
+  w.document.close();
+  w.onload = () => { setTimeout(() => w.print(), 400); };
 }
