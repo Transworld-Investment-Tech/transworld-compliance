@@ -68,14 +68,16 @@ function getQuarterBounds(year, quarter) {
 
 function fmtD(d) {
   if (!d) return '—'
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {
+  const safe = String(d).includes('T') ? d : d + 'T12:00:00'
+  return new Date(safe).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
   })
 }
 
 function fmtDLong(d) {
   if (!d) return '—'
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-GB', {
+  const safe = String(d).includes('T') ? d : d + 'T12:00:00'
+  return new Date(safe).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'long', year: 'numeric'
   })
 }

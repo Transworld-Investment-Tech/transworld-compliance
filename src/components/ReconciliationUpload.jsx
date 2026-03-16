@@ -612,15 +612,11 @@ export default function ReconciliationUpload({ currentUser }) {
         </div>
       </div>
 
-      {/* ── Period report generator ── */}
-      <div style={{ padding: '0 24px 32px' }}>
-        <F05ReportGenerator />
-      </div>
-
       {/* ── Session detail modal ── */}
       {viewSession && (
         <SessionModal session={viewSession} onClose={() => setViewSession(null)} />
       )}
+
     </div>
   )
 }
@@ -731,6 +727,15 @@ function SessionModal({ session, onClose }) {
             <div style={{ fontSize: 11, color: '#8fa3c0' }}>
               Approved by {session.approver_name} · {session.approved_at ? new Date(session.approved_at).toLocaleString() : ''}
             </div>
+            <button
+              onClick={() => printDailyF05(session)}
+              style={{
+                background: '#c9a84c', border: 'none', color: '#0d1f3c',
+                borderRadius: 6, padding: '6px 14px', cursor: 'pointer',
+                fontSize: 12, fontWeight: 700, fontFamily: "'IBM Plex Sans', sans-serif",
+              }}>
+              🖨 Print / PDF
+            </button>
             <button onClick={onClose} style={{
               background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff',
               borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 12,
@@ -849,6 +854,8 @@ function LoadingDots() {
 
 function formatDate(d) {
   if (!d) return '—'
+  // Append T12:00:00 so date-only strings are parsed as local noon, not UTC midnight
+  // (UTC midnight = previous day in US/EU timezones)
   const safe = String(d).includes('T') ? d : d + 'T12:00:00'
   return new Date(safe).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
