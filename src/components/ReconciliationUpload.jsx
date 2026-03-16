@@ -20,13 +20,15 @@ const RED       = '#c0392b'
 const RED_BG    = '#fdecea'
 
 // ── Section detection ────────────────────────────────────────────────────────
-// NaYa produces 3 structurally distinct files. We detect by columns + OrderType.
+// NaYa produces 4 structurally distinct file types.
 function detectSection(rows, headers) {
-  const colCount = headers.filter(Boolean).length
+  const colCount   = headers.filter(Boolean).length
   const orderTypes = new Set(rows.map(r => r.OrderType).filter(Boolean))
   const hasMixed   = orderTypes.has('MIXED')
-  const hasPartial = headers.includes('UnitsJobbed')
+  const hasPartial = headers.includes('UnitsJobbed')       // Partial utilization
+  const isJobHist  = headers.includes('RefNo') && headers.includes('JobbedUnits')  // Job Orders History
 
+  if (isJobHist)                           return 'job_history'
   if (hasPartial)                          return 'partial'
   if (colCount === 6 && hasMixed)          return 'not_jobbed'
   if (colCount === 6 && !hasMixed)         return 'fully_executed'
@@ -78,28 +80,24 @@ function fmtNum(val) {
 // ── Section config ────────────────────────────────────────────────────────────
 const SECTIONS = {
   fully_executed: {
-    label:    'Fully Executed Trades',
-    sub:      'Jobbed and traded in full — no action required',
-    icon:     '✅',
-    color:    GREEN,
-    bg:       GREEN_BG,
-    border:   '#a5d6a7',
+    label:  'Fully Executed Trades',
+    sub:    'Jobbed and traded in full — no action required',
+    icon:   '✅', color: GREEN, bg: GREEN_BG, border: '#a5d6a7',
   },
   partial: {
-    label:    'Partially Executed Trades',
-    sub:      'Jobbed but only partially filled — outstanding units remain',
-    icon:     '⚠️',
-    color:    AMBER,
-    bg:       AMBER_BG,
-    border:   '#ffe082',
+    label:  'Partially Executed Trades',
+    sub:    'Jobbed but only partially filled — outstanding units remain',
+    icon:   '⚠️', color: AMBER, bg: AMBER_BG, border: '#ffe082',
   },
   not_jobbed: {
-    label:    'Executed Trades Not Jobbed',
-    sub:      'Executed via e-trade portal — no job order (self-directed)',
-    icon:     '🔵',
-    color:    BLUE,
-    bg:       BLUE_BG,
-    border:   '#90caf9',
+    label:  'Executed Trades Not Jobbed',
+    sub:    'Executed via e-trade portal — no job order (self-directed)',
+    icon:   '🔵', color: BLUE, bg: BLUE_BG, border: '#90caf9',
+  },
+  unexecuted: {
+    label:  'Jobbed But Not Executed',
+    sub:    'Client mandate was entered and approved — but never traded on NGX',
+    icon:   '🔴', color: RED, bg: RED_BG, border: '#fca5a5',
   },
 }
 
@@ -121,7 +119,7 @@ export default function ReconciliationUpload({ currentUser }) {
   async function loadHistory() {
     const { data } = await supabase
       .from('reconciliation_sessions')
-      .select('id,trade_date,status,approver_name,approved_at,fully_executed_count,partial_count,not_jobbed_count')
+      .select('id,trade_date,status,approver_name,approved_at,fully_executed_count,partial_count,not_jobbed_count,unexecuted_count')
       .order('trade_date', { ascending: false })
       .limit(20)
     setHistory(data || [])
@@ -137,8 +135,8 @@ export default function ReconciliationUpload({ currentUser }) {
       setParseError('Please upload Excel (.xlsx) files exported from NaYa.')
       return
     }
-    if (xlsxFiles.length > 3) {
-      setParseError('Maximum 3 files at once (one per section).')
+    if (xlsxFiles.length > 4) {
+      setParseError('Maximum 4 files: up to 3 Jobbing Utilization sections + 1 Job Orders History.')
       return
     }
 
@@ -148,30 +146,72 @@ export default function ReconciliationUpload({ currentUser }) {
       // Validate — check for unknown sections
       const unknown = parsed.filter(p => p.section === 'unknown')
       if (unknown.length > 0) {
-        setParseError(`Could not identify section type for: ${unknown.map(u => u.fileName).join(', ')}. Make sure you are uploading Jobbing Book Utilization files.`)
+        setParseError(`Could not identify file type for: ${unknown.map(u => u.fileName).join(', ')}.`)
         return
       }
 
-      // Check for duplicate sections
-      const sections = parsed.map(p => p.section)
-      const dupes = sections.filter((s, i) => sections.indexOf(s) !== i)
+      // Check for duplicate utilization sections (job_history can appear once)
+      const utilSections = parsed.filter(p => p.section !== 'job_history').map(p => p.section)
+      const dupes = utilSections.filter((s, i) => utilSections.indexOf(s) !== i)
       if (dupes.length > 0) {
         setParseError(`Duplicate section detected: ${dupes[0]}. You uploaded two files of the same type.`)
         return
       }
 
-      // Extract trade date from first data row
-      const allRows = parsed.flatMap(p => p.rows)
-      if (allRows.length > 0 && allRows[0].EffectiveDate) {
-        const rawDate = fmtDate(allRows[0].EffectiveDate)
-        // Convert DD/MM/YYYY to YYYY-MM-DD
+      // ── Cross-reference: find unexecuted jobs ──────────────────────────────
+      const jobHistFiles = parsed.filter(p => p.section === 'job_history')
+      const utilFiles    = parsed.filter(p => p.section !== 'job_history')
+
+      let processedFiles = [...utilFiles]
+
+      if (jobHistFiles.length > 0) {
+        // Merge all job history rows, deduplicate by RefNo
+        const allJobRows = jobHistFiles.flatMap(f => f.rows)
+        const seenRefs = new Set()
+        const uniqueJobs = allJobRows.filter(r => {
+          const key = String(r.RefNo || '')
+          if (seenRefs.has(key)) return false
+          seenRefs.add(key)
+          return true
+        })
+
+        // Build execution lookup from utilization files: "CSCS|STOCK|SIDE" → true
+        const execKeys = new Set()
+        utilFiles.forEach(f => {
+          f.rows.forEach(r => {
+            if (r.OrderType !== 'MIXED') { // exclude e-trade
+              execKeys.add(`${r.CSCSAccNum}|${r.Security}|${r.OrderType}`)
+            }
+          })
+        })
+
+        // Jobs where no matching execution exists
+        const unexecutedRows = uniqueJobs.filter(j => {
+          const key = `${j.CSCSNo}|${j.Stock}|${j.ExecOrder}`
+          return !execKeys.has(key)
+        })
+
+        if (unexecutedRows.length > 0) {
+          processedFiles.push({
+            section: 'unexecuted',
+            headers: ['RefNo', 'EffectiveDate', 'ExpiryDate', 'Client', 'CSCSNo', 'Stock', 'ExecOrder', 'JobbedUnits', 'EnteredBy', 'ApprovedBy'],
+            rows: unexecutedRows,
+            fileName: 'cross-reference',
+          })
+        }
+      }
+
+      // Extract trade date from utilization rows
+      const utilRows = utilFiles.flatMap(f => f.rows)
+      if (utilRows.length > 0 && utilRows[0].EffectiveDate) {
+        const rawDate = fmtDate(utilRows[0].EffectiveDate)
         const parts = rawDate.split('/')
         if (parts.length === 3) {
           setTradeDate(`${parts[2]}-${parts[1]}-${parts[0]}`)
         }
       }
 
-      setFiles(parsed)
+      setFiles(processedFiles)
       setStage('parsed')
     } catch (err) {
       setParseError('Failed to read files: ' + err.message)
@@ -194,6 +234,8 @@ export default function ReconciliationUpload({ currentUser }) {
       const partial   = files.find(f => f.section === 'partial')
       const notJobbed = files.find(f => f.section === 'not_jobbed')
 
+      const unexecuted = files.find(f => f.section === 'unexecuted')
+
       // Insert session header
       const { data: session, error: sessionErr } = await supabase
         .from('reconciliation_sessions')
@@ -203,9 +245,10 @@ export default function ReconciliationUpload({ currentUser }) {
           approver_name:         currentUser || 'Admin',
           approver_note:         approverNote,
           approved_at:           new Date().toISOString(),
-          fully_executed_count:  fullyExec?.rows.length || 0,
-          partial_count:         partial?.rows.length   || 0,
-          not_jobbed_count:      notJobbed?.rows.length || 0,
+          fully_executed_count:  fullyExec?.rows.length  || 0,
+          partial_count:         partial?.rows.length    || 0,
+          not_jobbed_count:      notJobbed?.rows.length  || 0,
+          unexecuted_count:      unexecuted?.rows.length || 0,
           created_by:            currentUser || 'Admin',
         })
         .select().single()
@@ -255,6 +298,25 @@ export default function ReconciliationUpload({ currentUser }) {
         units_jobbed:      null,
         units_traded:      null,
         units_outstanding: null,
+      }))
+
+      // Unexecuted jobs
+      ;(unexecuted?.rows || []).forEach(r => lines.push({
+        session_id:        session.id,
+        section_type:      'unexecuted',
+        effective_date:    fmtDate(r.EffectiveDate),
+        client:            r.Client,
+        cscs_acc_num:      String(r.CSCSNo || ''),
+        order_type:        r.ExecOrder,
+        security:          r.Stock,
+        units:             Number(r.JobbedUnits) || 0,
+        units_jobbed:      null,
+        units_traded:      null,
+        units_outstanding: null,
+        ref_no:            String(r.RefNo || ''),
+        expiry_date:       fmtDate(r.ExpiryDate),
+        entered_by:        r.EnteredBy || null,
+        approved_by:       r.ApprovedBy || null,
       }))
 
       if (lines.length > 0) {
@@ -309,7 +371,7 @@ export default function ReconciliationUpload({ currentUser }) {
           Daily Trade Reconciliation
         </div>
         <div style={{ color: '#8fa3c0', fontSize: 12, marginTop: 2 }}>
-          Jobbing Book Utilization upload · Auto-detection · Compliance sign-off
+          Jobbing Book Utilization + Job Orders History · Auto-detection · Compliance sign-off
         </div>
       </div>
 
@@ -323,12 +385,12 @@ export default function ReconciliationUpload({ currentUser }) {
             <div>
               <PageTitle>Upload Today's Jobbing Book Utilization</PageTitle>
               <p style={{ color: '#5a6a82', fontSize: 13, marginBottom: 8, lineHeight: 1.7 }}>
-                From NaYa: <strong>Intelligence → Jobbing Book Utilization</strong> → enter today's date →
-                click <strong>Excel</strong> on each of the three sections. Drop all files here at once.
+                From NaYa: <strong>Intelligence → Jobbing Book Utilization</strong> → export up to 3 sections.
+                Also export <strong>Intelligence → Job Orders History</strong> for the same date to detect unexecuted mandates.
               </p>
               <p style={{ color: AMBER, fontSize: 12, marginBottom: 24, lineHeight: 1.6,
                 background: AMBER_BG, padding: '8px 12px', borderRadius: 6, display: 'inline-block' }}>
-                ⓘ If a section shows "0 Records Found", skip that Excel download — upload only the sections that have data.
+                ⓘ Drop all files at once (up to 4). Job Orders History is optional but recommended — it reveals mandates that were jobbed but never traded.
               </p>
 
               {/* Drop zone */}
@@ -389,8 +451,8 @@ export default function ReconciliationUpload({ currentUser }) {
               {parseError && <ErrorBox msg={parseError} />}
 
               {/* Summary pills */}
-              <div style={{ display: 'flex', gap: 12, marginBottom: 28 }}>
-                {['fully_executed', 'partial', 'not_jobbed'].map(key => {
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 28 }}>
+                {['fully_executed', 'partial', 'not_jobbed', 'unexecuted'].map(key => {
                   const found = files.find(f => f.section === key)
                   const cfg   = SECTIONS[key]
                   return (
@@ -398,7 +460,7 @@ export default function ReconciliationUpload({ currentUser }) {
                       background: found ? cfg.bg : '#f0f0f0',
                       border: `1px solid ${found ? cfg.border : '#ddd'}`,
                       borderRadius: 8, padding: '10px 16px',
-                      opacity: found ? 1 : 0.5, flex: 1,
+                      opacity: found ? 1 : 0.5,
                     }}>
                       <div style={{ fontSize: 18, marginBottom: 4 }}>{cfg.icon}</div>
                       <div style={{ fontWeight: 700, fontSize: 20, color: found ? cfg.color : '#aaa' }}>
@@ -407,7 +469,10 @@ export default function ReconciliationUpload({ currentUser }) {
                       <div style={{ fontSize: 11, color: '#5a6a82', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
                         {cfg.label}
                       </div>
-                      {!found && (
+                      {!found && key === 'unexecuted' && (
+                        <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>Upload Job Orders History to detect</div>
+                      )}
+                      {!found && key !== 'unexecuted' && (
                         <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>Not uploaded (0 records)</div>
                       )}
                     </div>
@@ -416,7 +481,7 @@ export default function ReconciliationUpload({ currentUser }) {
               </div>
 
               {/* Section tables */}
-              {['fully_executed', 'partial', 'not_jobbed'].map(key => {
+              {['fully_executed', 'partial', 'not_jobbed', 'unexecuted'].map(key => {
                 const found = files.find(f => f.section === key)
                 if (!found) return null
                 const cfg = SECTIONS[key]
@@ -441,11 +506,9 @@ export default function ReconciliationUpload({ currentUser }) {
                     </div>
 
                     <div style={{ overflowX: 'auto', border: `1px solid ${cfg.border}`, borderTop: 'none', borderRadius: '0 0 8px 8px' }}>
-                      {key === 'partial' ? (
-                        <PartialTable rows={found.rows} />
-                      ) : (
-                        <StandardTable rows={found.rows} />
-                      )}
+                      {key === 'partial'    ? <PartialTable     rows={found.rows} /> :
+                       key === 'unexecuted' ? <UnexecutedTable  rows={found.rows} /> :
+                                             <StandardTable     rows={found.rows} />}
                     </div>
                   </div>
                 )
@@ -506,6 +569,16 @@ export default function ReconciliationUpload({ currentUser }) {
                   </div>
                 )}
 
+                {files.some(f => f.section === 'unexecuted' && f.rows.length > 0) && (
+                  <div style={{
+                    background: RED_BG, border: `1px solid #fca5a5`,
+                    borderRadius: 6, padding: '8px 14px', fontSize: 12,
+                    color: RED, marginBottom: 14,
+                  }}>
+                    🔴 <strong>{files.find(f => f.section === 'unexecuted').rows.length} unexecuted mandate(s)</strong> — client instructions were jobbed and approved but never traded on NGX. Each requires documented explanation before locking.
+                  </div>
+                )}
+
                 <button onClick={approveAndSave} style={{
                   background: GOLD, color: NAV, border: 'none', borderRadius: 8,
                   padding: '12px 32px', fontWeight: 700, fontSize: 14,
@@ -554,6 +627,9 @@ export default function ReconciliationUpload({ currentUser }) {
                   • F-05 record locked with your name and timestamp<br />
                   • Partial fills are flagged for follow-up tomorrow<br />
                   • Self-directed trades are recorded as acknowledged<br />
+                  {files.some(f => f.section === 'unexecuted' && f.rows.length > 0) && (
+                    <span>• ⚠️ {files.find(f => f.section === 'unexecuted').rows.length} unexecuted mandate(s) recorded — follow up required<br /></span>
+                  )}
                   • All records are available for audit at any time
                 </div>
               </div>
@@ -607,9 +683,10 @@ export default function ReconciliationUpload({ currentUser }) {
                 </span>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Pill count={s.fully_executed_count} label="executed"  color={GREEN} bg={GREEN_BG} />
-                <Pill count={s.partial_count}        label="partial"   color={AMBER} bg={AMBER_BG} />
-                <Pill count={s.not_jobbed_count}     label="e-trade"   color={BLUE}  bg={BLUE_BG}  />
+                <Pill count={s.fully_executed_count} label="executed"    color={GREEN} bg={GREEN_BG} />
+                <Pill count={s.partial_count}        label="partial"     color={AMBER} bg={AMBER_BG} />
+                <Pill count={s.not_jobbed_count}     label="e-trade"     color={BLUE}  bg={BLUE_BG}  />
+                <Pill count={s.unexecuted_count}     label="unexecuted"  color={RED}   bg={RED_BG}   />
               </div>
               <div style={{ fontSize: 10, color: '#aaa', marginTop: 6 }}>
                 {s.approver_name}
@@ -704,11 +781,49 @@ function PartialTable({ rows }) {
   )
 }
 
+function UnexecutedTable({ rows }) {
+  if (!rows.length) return <EmptyTable />
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <thead>
+        <tr style={{ background: RED, color: '#fff' }}>
+          {['Ref No', 'Date', 'Expiry', 'Client', 'CSCS No', 'Security', 'Side', 'Jobbed Units', 'Entered By', 'Approved By'].map(h => (
+            <th key={h} style={thStyle}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={i} style={{ background: i % 2 === 0 ? RED_BG : '#fff5f5', borderBottom: '1px solid #fca5a5' }}>
+            <td style={{ ...tdStyle, fontFamily: 'monospace', fontWeight: 700, color: RED }}>{r.RefNo}</td>
+            <td style={tdStyle}>{fmtDate(r.EffectiveDate)}</td>
+            <td style={{ ...tdStyle, color: AMBER }}>{fmtDate(r.ExpiryDate)}</td>
+            <td style={{ ...tdStyle, fontWeight: 600 }}>{r.Client}</td>
+            <td style={{ ...tdStyle, fontFamily: 'monospace' }}>{r.CSCSNo}</td>
+            <td style={{ ...tdStyle, fontWeight: 700, fontFamily: 'monospace' }}>{r.Stock}</td>
+            <td style={tdStyle}>
+              <span style={{
+                background: r.ExecOrder === 'SELL' ? '#fdecea' : GREEN_BG,
+                color: r.ExecOrder === 'SELL' ? RED : GREEN,
+                fontWeight: 700, borderRadius: 4, padding: '2px 8px', fontSize: 11,
+              }}>{r.ExecOrder}</span>
+            </td>
+            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700, color: RED }}>{fmtNum(r.JobbedUnits)}</td>
+            <td style={{ ...tdStyle, fontSize: 11, color: '#5a6a82' }}>{r.EnteredBy || '—'}</td>
+            <td style={{ ...tdStyle, fontSize: 11, color: '#5a6a82' }}>{r.ApprovedBy || '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 function SessionModal({ session, onClose }) {
   const bySection = {
     fully_executed: session.lines.filter(l => l.section_type === 'fully_executed'),
     partial:        session.lines.filter(l => l.section_type === 'partial'),
     not_jobbed:     session.lines.filter(l => l.section_type === 'not_jobbed'),
+    unexecuted:     session.lines.filter(l => l.section_type === 'unexecuted'),
   }
 
   return (
