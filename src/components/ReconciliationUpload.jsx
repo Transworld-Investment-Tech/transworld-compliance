@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import * as XLSX from 'xlsx'
+import { printDailyF05 } from '../lib/f05Print'
+import F05ReportGenerator from './F05ReportGenerator'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const NAV       = '#0d1f3c'
@@ -610,6 +612,11 @@ export default function ReconciliationUpload({ currentUser }) {
         </div>
       </div>
 
+      {/* ── Period report generator ── */}
+      <div style={{ padding: '0 24px 32px' }}>
+        <F05ReportGenerator />
+      </div>
+
       {/* ── Session detail modal ── */}
       {viewSession && (
         <SessionModal session={viewSession} onClose={() => setViewSession(null)} />
@@ -842,7 +849,8 @@ function LoadingDots() {
 
 function formatDate(d) {
   if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  const safe = String(d).includes('T') ? d : d + 'T12:00:00'
+  return new Date(safe).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 const inputStyle = {
