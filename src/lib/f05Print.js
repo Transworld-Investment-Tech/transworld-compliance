@@ -173,6 +173,20 @@ export function printDailyF05(session) {
     : '') +
     '<div class="cert-box"><div class="cert-title">Compliance Certification</div>' +
     '<div class="cert-text">I confirm that this Daily Trade Reconciliation Report for <strong>' + fmtD(session.trade_date) + '</strong> is accurate and complete. All executed trades have been matched against the Jobbing Book. Partial fills and self-directed trades have been reviewed and acknowledged. This report has been prepared in accordance with the Firm\'s Internal Control Framework — Section 5a (Trading Controls) and NGX Rule 12.2.</div>' +
+    (partial.length > 0 || unexecuted.length > 0 ?
+      '<div style="margin:10px 0;padding:10px 14px;background:#fffbeb;border-left:3px solid #b45309;border-radius:0 5px 5px 0">' +
+      '<div style="font-size:7.5pt;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Exceptions Noted This Day</div>' +
+      (partial.length > 0 ? '<div style="font-size:8.5pt;color:#374151;margin-bottom:3px">⚠️ <strong>' + partial.length + ' partial fill(s)</strong> — outstanding units require follow-up on next trading day.</div>' : '') +
+      (unexecuted.length > 0 ? '<div style="font-size:8.5pt;color:#374151">🔴 <strong>' + unexecuted.length + ' unexecuted mandate(s)</strong> — client instructions were jobbed and approved but not traded on NGX. See table above for details.</div>' : '') +
+      '</div>'
+    : '') +
+    (session.approver_note ?
+      '<div style="margin:10px 0;padding:10px 14px;background:#f0f4ff;border-left:3px solid #1e40af;border-radius:0 5px 5px 0">' +
+      '<div style="font-size:7.5pt;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Compliance Officer\'s Explanation</div>' +
+      '<div style="font-size:9pt;color:#1a1a2e;line-height:1.7;font-style:italic">&ldquo;' + session.approver_note + '&rdquo;</div>' +
+      '<div style="font-size:7.5pt;color:#6b7280;margin-top:5px">— ' + (session.approver_name || 'Operations') + ' &nbsp;·&nbsp; ' + (session.approved_at ? new Date(session.approved_at).toLocaleString('en-GB') : '') + '</div>' +
+      '</div>'
+    : '') +
     sigBlock() + '</div>' +
     '<div class="ftr"><div>' + FIRM + ' — F-05 Daily Trade Reconciliation · ' + fmtD(session.trade_date) + '</div><div>Session: ' + session.id + ' · Confidential</div></div>' +
     '</div>'
@@ -182,27 +196,41 @@ export function printDailyF05(session) {
 
 // ── PERIOD ────────────────────────────────────────────────────────────────────
 export function printPeriodF05({ sessions, allLines, periodLabel, periodType, dateRange }) {
-  const now       = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
-  const totalExec = sessions.reduce((a, s) => a + (s.fully_executed_count || 0), 0)
-  const totalPart = sessions.reduce((a, s) => a + (s.partial_count || 0), 0)
-  const totalEtrd = sessions.reduce((a, s) => a + (s.not_jobbed_count || 0), 0)
-  const totalAll  = totalExec + totalPart + totalEtrd
-  const days      = sessions.length
-  const pw        = periodType === 'weekly' ? 'Weekly' : periodType === 'monthly' ? 'Monthly' : 'Quarterly'
+  const now        = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+  const totalExec  = sessions.reduce((a, s) => a + (s.fully_executed_count || 0), 0)
+  const totalPart  = sessions.reduce((a, s) => a + (s.partial_count || 0), 0)
+  const totalEtrd  = sessions.reduce((a, s) => a + (s.not_jobbed_count || 0), 0)
+  const totalUnex  = sessions.reduce((a, s) => a + (s.unexecuted_count || 0), 0)
+  const totalAll   = totalExec + totalPart + totalEtrd
+  const days       = sessions.length
+  const pw         = periodType === 'weekly' ? 'Weekly' : periodType === 'monthly' ? 'Monthly' : 'Quarterly'
 
+  // ── Day-by-day summary — includes unexecuted column ──────────────────────
   const summaryRows = sessions.map(s => {
-    const tot = (s.fully_executed_count || 0) + (s.partial_count || 0) + (s.not_jobbed_count || 0)
-    const icon = (s.partial_count || 0) > 0 ? '⚠️' : (s.not_jobbed_count || 0) > 0 ? '🔵' : '✅'
-    return '<tr><td style="font-weight:600">' + fmtDShort(s.trade_date) + '</td>' +
+    const tot  = (s.fully_executed_count || 0) + (s.partial_count || 0) + (s.not_jobbed_count || 0)
+    const unex = s.unexecuted_count || 0
+    const icon = (s.partial_count || 0) > 0 ? '⚠️' : unex > 0 ? '🔴' : (s.not_jobbed_count || 0) > 0 ? '🔵' : '✅'
+    return '<tr>' +
+      '<td style="font-weight:600">' + fmtDShort(s.trade_date) + '</td>' +
       '<td style="text-align:center;color:#1a7a4a;font-weight:600">' + (s.fully_executed_count || 0) + '</td>' +
       '<td style="text-align:center;color:' + ((s.partial_count || 0) > 0 ? '#b45309' : '#6b7280') + ';font-weight:' + ((s.partial_count || 0) > 0 ? 700 : 400) + '">' + (s.partial_count || 0) + '</td>' +
       '<td style="text-align:center;color:#1565c0">' + (s.not_jobbed_count || 0) + '</td>' +
+      '<td style="text-align:center;color:' + (unex > 0 ? '#c0392b' : '#6b7280') + ';font-weight:' + (unex > 0 ? 700 : 400) + '">' + unex + '</td>' +
       '<td style="text-align:center;font-weight:700">' + tot + '</td>' +
-      '<td style="text-align:center">' + icon + '</td></tr>'
-  }).join('') || '<tr><td colspan="6" class="no-data">No sessions in this period</td></tr>'
+      '<td style="text-align:center">' + icon + '</td>' +
+      (s.approver_note ? '<td style="font-size:7pt;color:#374151;max-width:120px">' + s.approver_note + '</td>' : '<td style="color:#9ca3af;font-size:7pt">—</td>') +
+    '</tr>'
+  }).join('') || '<tr><td colspan="8" class="no-data">No sessions in this period</td></tr>'
 
   const summaryFoot = sessions.length
-    ? '<tfoot><tr><td>TOTAL (' + days + ' day' + (days !== 1 ? 's' : '') + ')</td><td style="text-align:center;color:#1a7a4a">' + totalExec + '</td><td style="text-align:center;color:#b45309">' + totalPart + '</td><td style="text-align:center;color:#1565c0">' + totalEtrd + '</td><td style="text-align:center">' + totalAll + '</td><td></td></tr></tfoot>'
+    ? '<tfoot><tr>' +
+      '<td>TOTAL (' + days + ' day' + (days !== 1 ? 's' : '') + ')</td>' +
+      '<td style="text-align:center;color:#1a7a4a">' + totalExec + '</td>' +
+      '<td style="text-align:center;color:#b45309">' + totalPart + '</td>' +
+      '<td style="text-align:center;color:#1565c0">' + totalEtrd + '</td>' +
+      '<td style="text-align:center;color:#c0392b">' + totalUnex + '</td>' +
+      '<td style="text-align:center">' + totalAll + '</td>' +
+      '<td colspan="2"></td></tr></tfoot>'
     : ''
 
   const partialLines = allLines.filter(l => l.section_type === 'partial')
@@ -227,29 +255,72 @@ export function printPeriodF05({ sessions, allLines, periodLabel, periodType, da
     '<td style="text-align:right">' + fmtN(l.units) + '</td></tr>'
   ).join('') || '<tr><td colspan="6" class="no-data">No self-directed trades in this period</td></tr>'
 
+  const unexLines = allLines.filter(l => l.section_type === 'unexecuted')
+  const unexRows  = unexLines.map(l =>
+    '<tr><td style="font-weight:700;color:#c0392b">' + (l.ref_no || '—') + '</td>' +
+    '<td>' + fmtDShort(l.effective_date) + '</td>' +
+    '<td style="color:#b45309">' + fmtDShort(l.expiry_date) + '</td>' +
+    '<td style="font-weight:600">' + (l.client || '—') + '</td>' +
+    '<td style="font-family:monospace">' + (l.cscs_acc_num || '—') + '</td>' +
+    '<td style="font-weight:700;font-family:monospace">' + (l.security || '—') + '</td>' +
+    '<td>' + badge(l.order_type) + '</td>' +
+    '<td style="text-align:right;font-weight:700;color:#c0392b">' + fmtN(l.units) + '</td>' +
+    '<td style="font-size:7.5pt;color:#6b7280">' + (l.entered_by || '—') + '</td>' +
+    '<td style="font-size:7.5pt;color:#6b7280">' + (l.approved_by || '—') + '</td></tr>'
+  ).join('') || '<tr><td colspan="10" class="no-data">No unexecuted mandates in this period</td></tr>'
+
+  // ── Notes from each day that had exceptions ───────────────────────────────
+  const noteSessions = sessions.filter(s => s.approver_note)
+  const notesBlock = noteSessions.length > 0
+    ? '<div style="margin:10px 0;padding:10px 14px;background:#f0f4ff;border-left:3px solid #1e40af;border-radius:0 5px 5px 0">' +
+      '<div style="font-size:7.5pt;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Compliance Officers\' Explanations — Days with Exceptions</div>' +
+      noteSessions.map(s =>
+        '<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #e0e7ff">' +
+        '<div style="font-size:7.5pt;font-weight:700;color:#374151;margin-bottom:2px">' + fmtDShort(s.trade_date) + '</div>' +
+        '<div style="font-size:9pt;color:#1a1a2e;line-height:1.6;font-style:italic">&ldquo;' + s.approver_note + '&rdquo;</div>' +
+        '<div style="font-size:7pt;color:#6b7280;margin-top:2px">— ' + (s.approver_name || 'Operations') + '</div>' +
+        '</div>'
+      ).join('') +
+      '</div>'
+    : ''
+
   const html =
     '<div class="page">' +
     '<div class="hdr"><div><div class="firm">' + FIRM + '</div><div class="sub">Compliance Operations &nbsp;·&nbsp; Form F-05 &nbsp;·&nbsp; ' + pw + ' Trade Reconciliation</div></div>' +
     '<div class="hdr-right">Printed: ' + now + '<br/>Period: ' + periodLabel + '</div></div>' +
     '<div class="report-title">' + pw + ' Trade Reconciliation Report</div>' +
     '<div class="report-sub"><strong>' + periodLabel + '</strong> &nbsp;·&nbsp; ' + dateRange + ' &nbsp;·&nbsp; ' + days + ' trading day' + (days !== 1 ? 's' : '') + '</div>' +
-    '<div class="stat-row" style="grid-template-columns:repeat(4,1fr)">' +
+    '<div class="stat-row" style="grid-template-columns:repeat(5,1fr)">' +
       '<div class="stat-box" style="border-left:4px solid #0d1f3c"><div class="num" style="color:#0d1f3c">' + totalAll + '</div><div class="lbl">Total Trades</div></div>' +
       '<div class="stat-box" style="border-left:4px solid #1a7a4a"><div class="num" style="color:#1a7a4a">' + totalExec + '</div><div class="lbl">Fully Executed</div></div>' +
       '<div class="stat-box" style="border-left:4px solid #b45309"><div class="num" style="color:#b45309">' + totalPart + '</div><div class="lbl">Partial Fills</div></div>' +
-      '<div class="stat-box" style="border-left:4px solid #1565c0"><div class="num" style="color:#1565c0">' + totalEtrd + '</div><div class="lbl">E-Trade (Not Jobbed)</div></div>' +
+      '<div class="stat-box" style="border-left:4px solid #1565c0"><div class="num" style="color:#1565c0">' + totalEtrd + '</div><div class="lbl">E-Trade</div></div>' +
+      '<div class="stat-box" style="border-left:4px solid #c0392b"><div class="num" style="color:#c0392b">' + totalUnex + '</div><div class="lbl">Unexecuted</div></div>' +
     '</div>' +
     '<div class="section-block"><div class="section-hdr" style="background:#f0f4ff;border:1px solid #c7d2fe"><span class="icon">📅</span><span class="title" style="color:#1e40af">' + pw + ' Summary — Trading Days</span><span class="count" style="color:#1e40af">' + days + ' session' + (days !== 1 ? 's' : '') + '</span></div>' +
-    '<div class="section-body" style="border:1px solid #c7d2fe;border-top:none"><table><thead><tr><th>Trade Date</th><th style="text-align:center">Executed</th><th style="text-align:center">Partial</th><th style="text-align:center">E-Trade</th><th style="text-align:center">Total</th><th style="text-align:center">Status</th></tr></thead><tbody>' + summaryRows + '</tbody>' + summaryFoot + '</table></div></div>' +
+    '<div class="section-body" style="border:1px solid #c7d2fe;border-top:none"><table><thead><tr>' +
+    '<th>Trade Date</th><th style="text-align:center">Executed</th><th style="text-align:center">Partial</th><th style="text-align:center">E-Trade</th><th style="text-align:center;color:#fca5a5">Unexecuted</th><th style="text-align:center">Total</th><th style="text-align:center">Flag</th><th>Officer\'s Note</th>' +
+    '</tr></thead><tbody>' + summaryRows + '</tbody>' + summaryFoot + '</table></div></div>' +
     '<div class="section-block"><div class="section-hdr" style="background:#fff8e1;border:1px solid #ffe082"><span class="icon">⚠️</span><span class="title" style="color:#b45309">Partial Fills — Full Detail</span><span class="count" style="color:#b45309">' + partialLines.length + ' record' + (partialLines.length !== 1 ? 's' : '') + '</span></div>' +
     '<div class="section-body" style="border:1px solid #ffe082;border-top:none"><table><thead><tr><th>Date</th><th>Client</th><th>CSCS No</th><th>Security</th><th>Order</th><th style="text-align:right">Jobbed</th><th style="text-align:right">Traded</th><th style="text-align:right">Outstanding</th></tr></thead><tbody>' + partialRows + '</tbody></table></div></div>' +
     '<div class="section-block"><div class="section-hdr" style="background:#e3f0ff;border:1px solid #90caf9"><span class="icon">🔵</span><span class="title" style="color:#1565c0">Self-Directed Trades (E-Trade Portal) — Full Detail</span><span class="count" style="color:#1565c0">' + etLines.length + ' record' + (etLines.length !== 1 ? 's' : '') + '</span></div>' +
     '<div class="section-body" style="border:1px solid #90caf9;border-top:none"><table><thead><tr><th>Date</th><th>Client</th><th>CSCS No</th><th>Security</th><th>Order</th><th style="text-align:right">Units</th></tr></thead><tbody>' + etRows + '</tbody></table></div></div>' +
+    '<div class="section-block"><div class="section-hdr" style="background:#fdecea;border:1px solid #fca5a5"><span class="icon">🔴</span><span class="title" style="color:#c0392b">Jobbed But Not Executed — Full Detail</span><span class="count" style="color:#c0392b">' + unexLines.length + ' record' + (unexLines.length !== 1 ? 's' : '') + '</span></div>' +
+    '<div class="section-body" style="border:1px solid #fca5a5;border-top:none"><table><thead><tr><th>Ref No</th><th>Date</th><th>Expiry</th><th>Client</th><th>CSCS No</th><th>Security</th><th>Side</th><th style="text-align:right">Jobbed Units</th><th>Entered By</th><th>Approved By</th></tr></thead><tbody>' + unexRows + '</tbody></table></div></div>' +
     '<div class="cert-box"><div class="cert-title">Compliance Certification</div>' +
     '<div class="cert-text">I confirm that this ' + pw + ' Trade Reconciliation Report covering <strong>' + periodLabel + '</strong> (' + dateRange + ') is accurate and complete. All ' + days + ' trading day' + (days !== 1 ? 's' : '') + ' in this period have been reconciled against the Jobbing Book. This report is produced in accordance with the Firm\'s Internal Control Framework — Section 5a (Trading Controls) and NGX Rule 12.2.</div>' +
+    ((totalPart > 0 || totalUnex > 0) ?
+      '<div style="margin:10px 0;padding:10px 14px;background:#fffbeb;border-left:3px solid #b45309;border-radius:0 5px 5px 0">' +
+      '<div style="font-size:7.5pt;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px">Exceptions in This Period</div>' +
+      (totalPart > 0 ? '<div style="font-size:8.5pt;color:#374151;margin-bottom:3px">⚠️ <strong>' + totalPart + ' partial fill(s)</strong> — see partial fills detail above.</div>' : '') +
+      (totalUnex > 0 ? '<div style="font-size:8.5pt;color:#374151">🔴 <strong>' + totalUnex + ' unexecuted mandate(s)</strong> — client instructions jobbed but not traded on NGX. See detail above.</div>' : '') +
+      '</div>'
+    : '') +
+    notesBlock +
     sigBlock() + '</div>' +
     '<div class="ftr"><div>' + FIRM + ' — F-05 ' + pw + ' Trade Reconciliation · ' + periodLabel + '</div><div>Confidential · Internal Use Only</div></div>' +
     '</div>'
 
   openPrintWindow('F-05 ' + pw + ' Reconciliation — ' + periodLabel, html)
 }
+
