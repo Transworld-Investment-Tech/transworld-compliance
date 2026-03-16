@@ -72,22 +72,6 @@ const PRINT_CSS = `
   .badge-mix  { background: #e3f0ff; color: #1565c0; }
   .outstanding { color: #b45309; font-weight: 700; }
 
-  /* ── Initials strip — appears at bottom of every non-final page ── */
-  .initials-strip {
-    display: none;
-  }
-  @media print {
-    .initials-strip {
-      display: flex; gap: 32px; align-items: flex-end;
-      border-top: 1px dashed #d1d5db; padding-top: 6px; margin-top: 14px;
-      page-break-inside: avoid;
-    }
-    .initials-box { flex: 1; }
-    .initials-line { border-bottom: 1px solid #374151; height: 18px; }
-    .initials-lbl  { font-size: 6.5pt; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
-    .initials-note { font-size: 6.5pt; color: #6b7280; margin-left: auto; align-self: flex-end; font-style: italic; }
-  }
-
   /* ── Certification block ── */
   .cert-box { margin-top: 16px; border: 1.5px solid #0d1f3c; border-radius: 7px; padding: 12px 16px; page-break-inside: avoid; }
   .cert-title { font-weight: 700; font-size: 10pt; color: #0d1f3c; margin-bottom: 6px; }
@@ -169,16 +153,6 @@ function sigBlock() {
     '<div class="sig-field"><div class="sig-label">Prepared By (Operations)</div><div class="sig-line"></div><div class="sig-sub">Signature &amp; Date</div></div>' +
     '<div class="sig-field"><div class="sig-label">Chief Operations Officer</div><div class="sig-line"></div><div class="sig-sub">Signature &amp; Date</div></div>' +
     '<div class="sig-field"><div class="sig-label">Compliance Officer</div><div class="sig-line"></div><div class="sig-sub">Signature &amp; Date</div></div>' +
-    '</div>'
-}
-
-// ── Initials strip — appears between sections on earlier pages ────────────────
-function initialsStrip(pageLabel) {
-  return '<div class="initials-strip">' +
-    '<div class="initials-box"><div class="initials-line"></div><div class="initials-lbl">Operations — Initials</div></div>' +
-    '<div class="initials-box"><div class="initials-line"></div><div class="initials-lbl">Chief Operations Officer — Initials</div></div>' +
-    '<div class="initials-box"><div class="initials-line"></div><div class="initials-lbl">Compliance Officer — Initials</div></div>' +
-    '<div class="initials-note">' + (pageLabel || 'Page ___') + ' — continued overleaf</div>' +
     '</div>'
 }
 
@@ -273,10 +247,6 @@ export function printDailyF05(session) {
       '<div class="stat-box" style="border-left:4px solid #1565c0"><div class="num" style="color:#1565c0">' + (session.not_jobbed_count || 0) + '</div><div class="lbl">Self-Directed (E-Trade)</div></div>' +
       (unexecuted.length > 0 ? '<div class="stat-box" style="border-left:4px solid #c0392b"><div class="num" style="color:#c0392b">' + unexecuted.length + '</div><div class="lbl">Unexecuted Mandates</div></div>' : '') +
     '</div>' +
-
-    // Initials strip after stats (before tables)
-    initialsStrip('Page 1') +
-
     // ── Sections ──
     pageRepeatHdr(FIRM, reportType, period) +
     '<div class="section-block"><div class="section-hdr" style="background:#e8f5e9;border:1px solid #a5d6a7"><span class="icon">✅</span><span class="title" style="color:#1a7a4a">Fully Executed Trades From The Jobbing Book</span><span class="count" style="color:#1a7a4a">' + fullyExec.length + ' record' + (fullyExec.length !== 1 ? 's' : '') + '</span></div>' +
@@ -289,8 +259,7 @@ export function printDailyF05(session) {
     '<div class="section-body" style="border:1px solid #90caf9;border-top:none"><table><thead><tr><th>Date</th><th>Client</th><th>CSCS No</th><th>Order</th><th>Security</th><th style="text-align:right">Units</th></tr></thead><tbody>' + stdRows(notJobbed) + '</tbody></table></div></div>' +
 
     (unexecuted.length > 0
-      ? initialsStrip('Page ___') +
-        pageRepeatHdr(FIRM, reportType, period) +
+      ? pageRepeatHdr(FIRM, reportType, period) +
         '<div class="section-block"><div class="section-hdr" style="background:#fdecea;border:1px solid #fca5a5"><span class="icon">🔴</span><span class="title" style="color:#c0392b">Jobbed But Not Executed</span><span class="count" style="color:#c0392b">' + unexecuted.length + ' record' + (unexecuted.length !== 1 ? 's' : '') + '</span></div>' +
         '<div class="section-body" style="border:1px solid #fca5a5;border-top:none"><table><thead><tr><th>Ref No</th><th>Date</th><th>Expiry</th><th>Client</th><th>CSCS No</th><th>Security</th><th>Side</th><th style="text-align:right">Jobbed Units</th><th>Entered By</th><th>Approved By</th></tr></thead><tbody>' + unexRows + '</tbody></table></div></div>'
       : '') +
@@ -417,19 +386,12 @@ export function printPeriodF05({ sessions, allLines, periodLabel, periodType, da
       '<div class="stat-box" style="border-left:4px solid #1565c0"><div class="num" style="color:#1565c0">' + totalEtrd + '</div><div class="lbl">E-Trade</div></div>' +
       '<div class="stat-box" style="border-left:4px solid #c0392b"><div class="num" style="color:#c0392b">' + totalUnex + '</div><div class="lbl">Unexecuted</div></div>' +
     '</div>' +
-
-    // Initials after stats
-    initialsStrip('Page 1') +
-
     // Summary table
     pageRepeatHdr(FIRM, reportType, periodLabel) +
     '<div class="section-block"><div class="section-hdr" style="background:#f0f4ff;border:1px solid #c7d2fe"><span class="icon">📅</span><span class="title" style="color:#1e40af">' + pw + ' Summary — Trading Days</span><span class="count" style="color:#1e40af">' + days + ' session' + (days !== 1 ? 's' : '') + '</span></div>' +
     '<div class="section-body" style="border:1px solid #c7d2fe;border-top:none"><table><thead><tr>' +
     '<th>Trade Date</th><th style="text-align:center">Executed</th><th style="text-align:center">Partial</th><th style="text-align:center">E-Trade</th><th style="text-align:center">Unexecuted</th><th style="text-align:center">Total</th><th style="text-align:center">Flag</th><th>Operations Note</th>' +
     '</tr></thead><tbody>' + summaryRows + '</tbody>' + summaryFoot + '</table></div></div>' +
-
-    initialsStrip('Page ___') +
-
     // Detail sections
     pageRepeatHdr(FIRM, reportType, periodLabel) +
     '<div class="section-block"><div class="section-hdr" style="background:#fff8e1;border:1px solid #ffe082"><span class="icon">⚠️</span><span class="title" style="color:#b45309">Partial Fills — Full Detail</span><span class="count" style="color:#b45309">' + partialLines.length + ' record' + (partialLines.length !== 1 ? 's' : '') + '</span></div>' +
