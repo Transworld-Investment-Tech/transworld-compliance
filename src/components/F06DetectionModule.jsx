@@ -62,6 +62,85 @@ function parseXLSX(file) {
   })
 }
 
+// ── PDF extraction via /api/extract ─────────────────────────────────────────
+async function extractJobHistoryFromPDF(file) {
+  const base64 = await new Promise((res, rej) => {
+    const r = new FileReader()
+    r.onload  = () => res(r.result.split(',')[1])
+    r.onerror = () => rej(new Error('Read failed'))
+    r.readAsDataURL(file)
+  })
+
+  const systemPrompt = `You are a data extraction assistant for a Nigerian investment securities firm.
+You will be given a Job Orders History PDF from NaYa TRM (Transworld Investment and Securities).
+Extract ALL rows from the job orders table and return ONLY a JSON array with no preamble, no markdown backticks.
+
+Each object in the array must have exactly these fields:
+{
+  "RefNo": number,
+  "EffectiveDate": "DD/MM/YYYY",
+  "ExpiryDate": "DD/MM/YYYY",
+  "Client": "string",
+  "CSCSNo": "string",
+  "Stock": "string (NGX ticker, uppercase)",
+  "ExecOrder": "BUY or SELL",
+  "Status": "string",
+  "JobbedUnits": number,
+  "AvailableUnits": number,
+  "EnteredBy": "string",
+  "ApprovedBy": "string"
+}
+
+Rules:
+- ExecOrder must be exactly "BUY" or "SELL"
+- All numbers must be plain numbers with no commas
+- If a field is blank or n/a, use null
+- Return ONLY the JSON array, nothing else`
+
+  const response = await fetch('/api/extract', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model:      'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      system:     systemPrompt,
+      messages: [{
+        role:    'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+          { type: 'text',     text: 'Extract all job order rows from this PDF. Return only the JSON array.' }
+        ]
+      }]
+    })
+  })
+
+  const data     = await response.json()
+  const rawText  = data.content.filter(b => b.type === 'text').map(b => b.text).join('')
+  const clean    = rawText.replace(/```json|```/g, '').trim()
+  const rows     = JSON.parse(clean)
+
+  // Normalise to match detectFileType expectations
+  return {
+    type:     'job_history',
+    headers:  ['RefNo', 'EffectiveDate', 'ExpiryDate', 'Client', 'CSCSNo', 'Stock', 'ExecOrder', 'Status', 'JobbedUnits', 'AvailableUnits', 'EnteredBy', 'ApprovedBy'],
+    rows:     rows.map(r => ({
+      RefNo:          r.RefNo,
+      EffectiveDate:  r.EffectiveDate,
+      ExpiryDate:     r.ExpiryDate,
+      Client:         r.Client,
+      CSCSNo:         String(r.CSCSNo || ''),
+      Stock:          r.Stock,
+      ExecOrder:      r.ExecOrder,
+      Status:         r.Status,
+      JobbedUnits:    Number(r.JobbedUnits) || 0,
+      AvailableUnits: Number(r.AvailableUnits) || 0,
+      EnteredBy:      r.EnteredBy,
+      ApprovedBy:     r.ApprovedBy,
+    })),
+    fileName: file.name,
+  }
+}
+
 function fmtDate(d) {
   if (!d) return '—'
   const s = String(d)
@@ -359,8 +438,15 @@ export default function F06DetectionModule({ onPreFillF06 }) {
   async function processFiles(rawFiles) {
     setParsing(true)
     try {
-      const results = await Promise.all(rawFiles.map(parseXLSX))
-      const known   = results.filter(r => r.type !== 'unknown')
+      const results = await Promise.all(rawFiles.map(async file => {
+        // PDFs → AI extraction (Job Orders History format)
+        if (file.name.toLowerCase().endsWith('.pdf')) {
+          return await extractJobHistoryFromPDF(file)
+        }
+        // Excel → structural detection
+        return await parseXLSX(file)
+      }))
+      const known = results.filter(r => r.type !== 'unknown')
       setParsed(known)
       setFiles(rawFiles)
       const found = runDetection(known)
@@ -409,7 +495,7 @@ export default function F06DetectionModule({ onPreFillF06 }) {
       {/* What to upload */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 20 }}>
         {[
-          { icon: '📋', label: 'Job Orders History', desc: 'From NaYa → Intelligence → Job Orders History (Excel)', required: true,  type: 'F-04' },
+          { icon: '📋', label: 'Job Orders History', desc: 'From NaYa → Intelligence → Job Orders History (PDF or Excel)', required: true,  type: 'F-04' },
           { icon: '✅', label: 'Jobbing Utilization', desc: 'From NaYa → Intelligence → Jobbing Book Utilization (up to 3 sections)', required: true,  type: 'F-05' },
           { icon: '📊', label: 'CSD Trade Log', desc: 'From CSCS portal — provides execution prices for financial impact calculation', required: false, type: 'CSD' },
         ].map(f => (
@@ -447,10 +533,10 @@ export default function F06DetectionModule({ onPreFillF06 }) {
         <input
           id="detect-file-input"
           type="file"
-          accept=".xlsx,.xls"
+          accept=".xlsx,.xls,.pdf"
           multiple
           style={{ display: 'none' }}
-          onChange={e => processFiles(Array.from(e.target.files))}
+          onChange={e => { if (e.target.files.length) processFiles(Array.from(e.target.files)) }}
         />
       </div>
 
