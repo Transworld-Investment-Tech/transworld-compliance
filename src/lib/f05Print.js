@@ -62,13 +62,24 @@ function openPrintWindow(title, bodyHtml) {
 
 function fmtD(d) {
   if (!d) return '—'
-  const safe = String(d).includes('T') ? d : d + 'T12:00:00'
+  const s = String(d)
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+    const [dd, mm, yyyy] = s.split('/')
+    return new Date(`${yyyy}-${mm}-${dd}T12:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+  }
+  const safe = s.includes('T') ? s : s + 'T12:00:00'
   return new Date(safe).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
 function fmtDShort(d) {
   if (!d) return '—'
-  const safe = String(d).includes('T') ? d : d + 'T12:00:00'
+  const s = String(d)
+  // Handle DD/MM/YYYY (stored from NaYa) → convert to YYYY-MM-DD first
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+    const [dd, mm, yyyy] = s.split('/')
+    return new Date(`${yyyy}-${mm}-${dd}T12:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+  const safe = s.includes('T') ? s : s + 'T12:00:00'
   return new Date(safe).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
@@ -95,9 +106,10 @@ function sigBlock() {
 export function printDailyF05(session) {
   if (!session) return
   const now = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
-  const fullyExec = (session.lines || []).filter(l => l.section_type === 'fully_executed')
-  const partial   = (session.lines || []).filter(l => l.section_type === 'partial')
-  const notJobbed = (session.lines || []).filter(l => l.section_type === 'not_jobbed')
+  const fullyExec  = (session.lines || []).filter(l => l.section_type === 'fully_executed')
+  const partial    = (session.lines || []).filter(l => l.section_type === 'partial')
+  const notJobbed  = (session.lines || []).filter(l => l.section_type === 'not_jobbed')
+  const unexecuted = (session.lines || []).filter(l => l.section_type === 'unexecuted')
 
   function stdRows(lines) {
     if (!lines.length) return '<tr><td colspan="6" class="no-data">No records</td></tr>'
@@ -130,10 +142,11 @@ export function printDailyF05(session) {
     '<div class="hdr-right">Printed: ' + now + '<br/>Trade Date: ' + fmtD(session.trade_date) + '</div></div>' +
     '<div class="report-title">Daily Trade Reconciliation Report</div>' +
     '<div class="report-sub">Trade Date: <strong>' + fmtD(session.trade_date) + '</strong></div>' +
-    '<div class="stat-row" style="grid-template-columns:1fr 1fr 1fr">' +
+    '<div class="stat-row" style="grid-template-columns:' + (unexecuted.length > 0 ? 'repeat(4,1fr)' : '1fr 1fr 1fr') + '">' +
       '<div class="stat-box" style="border-left:4px solid #1a7a4a"><div class="num" style="color:#1a7a4a">' + (session.fully_executed_count || 0) + '</div><div class="lbl">Fully Executed</div></div>' +
       '<div class="stat-box" style="border-left:4px solid #b45309"><div class="num" style="color:#b45309">' + (session.partial_count || 0) + '</div><div class="lbl">Partial Fills</div></div>' +
       '<div class="stat-box" style="border-left:4px solid #1565c0"><div class="num" style="color:#1565c0">' + (session.not_jobbed_count || 0) + '</div><div class="lbl">Self-Directed (E-Trade)</div></div>' +
+      (unexecuted.length > 0 ? '<div class="stat-box" style="border-left:4px solid #c0392b"><div class="num" style="color:#c0392b">' + unexecuted.length + '</div><div class="lbl">Unexecuted Mandates</div></div>' : '') +
     '</div>' +
     '<div class="section-block"><div class="section-hdr" style="background:#e8f5e9;border:1px solid #a5d6a7"><span class="icon">✅</span><span class="title" style="color:#1a7a4a">Fully Executed Trades From The Jobbing Book</span><span class="count" style="color:#1a7a4a">' + fullyExec.length + ' record' + (fullyExec.length !== 1 ? 's' : '') + '</span></div>' +
     '<div class="section-body" style="border:1px solid #a5d6a7;border-top:none"><table><thead><tr><th>Date</th><th>Client</th><th>CSCS No</th><th>Order</th><th>Security</th><th style="text-align:right">Units</th></tr></thead><tbody>' + stdRows(fullyExec) + '</tbody></table></div></div>' +
@@ -141,6 +154,23 @@ export function printDailyF05(session) {
     '<div class="section-body" style="border:1px solid #ffe082;border-top:none"><table><thead><tr><th>Date</th><th>Client</th><th>CSCS No</th><th>Order</th><th>Security</th><th style="text-align:right">Jobbed</th><th style="text-align:right">Traded</th><th style="text-align:right">Outstanding</th></tr></thead><tbody>' + partialRows + '</tbody></table></div></div>' +
     '<div class="section-block"><div class="section-hdr" style="background:#e3f0ff;border:1px solid #90caf9"><span class="icon">🔵</span><span class="title" style="color:#1565c0">Executed Trades Not Jobbed (E-Trade Portal)</span><span class="count" style="color:#1565c0">' + notJobbed.length + ' record' + (notJobbed.length !== 1 ? 's' : '') + '</span></div>' +
     '<div class="section-body" style="border:1px solid #90caf9;border-top:none"><table><thead><tr><th>Date</th><th>Client</th><th>CSCS No</th><th>Order</th><th>Security</th><th style="text-align:right">Units</th></tr></thead><tbody>' + stdRows(notJobbed) + '</tbody></table></div></div>' +
+    (unexecuted.length > 0 ?
+      '<div class="section-block"><div class="section-hdr" style="background:#fdecea;border:1px solid #fca5a5"><span class="icon">🔴</span><span class="title" style="color:#c0392b">Jobbed But Not Executed</span><span class="count" style="color:#c0392b">' + unexecuted.length + ' record' + (unexecuted.length !== 1 ? 's' : '') + '</span></div>' +
+      '<div class="section-body" style="border:1px solid #fca5a5;border-top:none"><table><thead><tr><th>Ref No</th><th>Date</th><th>Expiry</th><th>Client</th><th>CSCS No</th><th>Security</th><th>Side</th><th style="text-align:right">Jobbed Units</th><th>Entered By</th><th>Approved By</th></tr></thead><tbody>' +
+      unexecuted.map(l =>
+        '<tr><td style="font-weight:700;color:#c0392b">' + (l.ref_no || '—') + '</td>' +
+        '<td>' + fmtDShort(l.effective_date) + '</td>' +
+        '<td style="color:#b45309">' + fmtDShort(l.expiry_date) + '</td>' +
+        '<td style="font-weight:600">' + (l.client || '—') + '</td>' +
+        '<td style="font-family:monospace">' + (l.cscs_acc_num || '—') + '</td>' +
+        '<td style="font-weight:700;font-family:monospace">' + (l.security || '—') + '</td>' +
+        '<td>' + badge(l.order_type) + '</td>' +
+        '<td style="text-align:right;font-weight:700;color:#c0392b">' + fmtN(l.units) + '</td>' +
+        '<td style="font-size:7.5pt;color:#6b7280">' + (l.entered_by || '—') + '</td>' +
+        '<td style="font-size:7.5pt;color:#6b7280">' + (l.approved_by || '—') + '</td></tr>'
+      ).join('') +
+      '</tbody></table></div></div>'
+    : '') +
     '<div class="cert-box"><div class="cert-title">Compliance Certification</div>' +
     '<div class="cert-text">I confirm that this Daily Trade Reconciliation Report for <strong>' + fmtD(session.trade_date) + '</strong> is accurate and complete. All executed trades have been matched against the Jobbing Book. Partial fills and self-directed trades have been reviewed and acknowledged. This report has been prepared in accordance with the Firm\'s Internal Control Framework — Section 5a (Trading Controls) and NGX Rule 12.2.</div>' +
     sigBlock() + '</div>' +
