@@ -4,9 +4,8 @@ import { supabase } from '../lib/supabase'
 
 const NAV_ITEMS = [
   { path: '/dashboard',  label: 'Dashboard',         icon: '⬛', section: 'overview' },
-  { path: '/f04',        label: 'F-04 Mandate Import', icon: '📋', section: 'trading' },
-  // Future items — uncomment as each module is built:
-  // { path: '/reconcile',  label: 'Reconciliation',     icon: '⚖️',  section: 'trading' },
+  { path: '/f04',        label: 'F-04 Mandate Import',   icon: '📋', section: 'trading' },
+  { path: '/reconcile',  label: 'F-05 Reconciliation',    icon: '⚖️',  section: 'trading' },
   // { path: '/f05',        label: 'F-05 Trade Report',   icon: '📊', section: 'trading' },
   // { path: '/f06',        label: 'F-06 Error Trades',   icon: '⚠️',  section: 'trading' },
   // { path: '/reports',    label: 'Reports',             icon: '📁', section: 'reports' },

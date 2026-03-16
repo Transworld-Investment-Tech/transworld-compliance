@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-
 export default function DashboardPage({ user }) {
   const [stats, setStats] = useState({ mandatesThisWeek: 0, lastMandateDate: null })
   const [loading, setLoading] = useState(true)
@@ -94,10 +93,11 @@ export default function DashboardPage({ user }) {
             live
           />
           <ModuleCard
+            to="/reconcile"
             icon="⚖️"
-            label="Reconciliation"
-            desc="Compare approved mandates against NaYa executed trades after market close. Auto-generates F-05."
-            soon
+            label="F-05 Reconciliation"
+            desc="Upload Jobbing Book Utilization files from NaYa. Auto-detects section type, flags partial fills and self-directed trades."
+            live
           />
           <ModuleCard
             icon="📊"
