@@ -537,7 +537,11 @@ export default function ReconciliationUpload({ currentUser }) {
                     </div>
                   </div>
                   <div style={{ flex: 2 }}>
-                    <label style={labelStyle}>Notes (optional)</label>
+                    <label style={labelStyle}>
+                      {(files.some(f => f.section === 'partial' && f.rows.length > 0) || files.some(f => f.section === 'unexecuted' && f.rows.length > 0))
+                        ? <span>Explanation for exceptions <span style={{ color: RED }}>*</span></span>
+                        : 'Notes (optional)'}
+                    </label>
                     <textarea
                       value={approverNote}
                       onChange={e => setApproverNote(e.target.value)}
