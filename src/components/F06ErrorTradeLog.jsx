@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import F06DetectionModule from './F06DetectionModule'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const NAV   = '#0d1f3c'
@@ -244,7 +245,7 @@ const EMPTY = {
 
 // ── MAIN COMPONENT ────────────────────────────────────────────────────────────
 export default function F06ErrorTradeLog({ currentUser }) {
-  const [view,    setView]    = useState('log')   // log | new | detail
+  const [view,    setView]    = useState('log')   // log | new | detail | detect
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [form,    setForm]    = useState(EMPTY)
@@ -405,8 +406,9 @@ export default function F06ErrorTradeLog({ currentUser }) {
           {/* Tab bar */}
           <div style={{ display: 'flex', gap: 0, borderBottom: `1.5px solid ${BORDER}`, marginBottom: 28 }}>
             {[
-              { key: 'log', label: '📋 Error Trade Log' },
-              { key: 'new', label: '+ Log New Error' },
+              { key: 'log',    label: '📋 Error Trade Log' },
+              { key: 'detect', label: '🔍 Detect Errors' },
+              { key: 'new',    label: '+ Log Manually' },
             ].map(t => (
               <div key={t.key} onClick={() => { setView(t.key); setSelected(null) }}
                 style={{
@@ -509,6 +511,16 @@ export default function F06ErrorTradeLog({ currentUser }) {
               onSignOff={() => signOff(selected.id)}
               onNGXFiled={() => markNGXFiled(selected.id)}
               currentUser={currentUser}
+            />
+          )}
+
+          {/* ── DETECT VIEW ── */}
+          {view === 'detect' && (
+            <F06DetectionModule
+              onPreFillF06={prefill => {
+                setForm(f => ({ ...f, ...prefill }))
+                setView('new')
+              }}
             />
           )}
 
