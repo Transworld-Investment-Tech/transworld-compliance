@@ -43,7 +43,9 @@ export default function Shell({ user, children }) {
     navigate('/')
   }
 
-  const visibleItems = NAV_ITEMS.filter(i => !i.adminOnly || userRole === 'admin')
+  // Show admin items when role is admin OR when no profile exists yet (bootstrap mode)
+  const isAdmin = userRole === 'admin' || userRole === null
+  const visibleItems = NAV_ITEMS.filter(i => !i.adminOnly || isAdmin)
   const grouped = visibleItems.reduce((acc, item) => {
     if (!acc[item.section]) acc[item.section] = []
     acc[item.section].push(item)
@@ -147,13 +149,24 @@ export default function Shell({ user, children }) {
             </div>
           </div>
           <button
+            onClick={() => navigate('/change-password')}
+            style={{
+              width: '100%', background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)',
+              borderRadius: 6, padding: '6px 0', fontSize: 11,
+              marginBottom: 6, cursor: 'pointer',
+            }}
+          >
+            🔑 Change Password
+          </button>
+          <button
             onClick={handleSignOut}
             disabled={signingOut}
             style={{
               width: '100%', background: 'rgba(255,255,255,0.06)',
               border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)',
               borderRadius: 6, padding: '7px 0', fontSize: 11,
-              transition: 'all 0.15s',
+              transition: 'all 0.15s', cursor: 'pointer',
             }}
           >
             {signingOut ? 'Signing out…' : 'Sign out'}
