@@ -11,18 +11,13 @@ const ROLE_LABELS = {
 }
 
 const NAV_ITEMS = [
-  { path: '/dashboard',  label: 'Dashboard',           icon: '⬛', section: 'overview' },
-  { path: '/f04',        label: 'F-04 Mandate Import', icon: '📋', section: 'trading' },
-  { path: '/reconcile',  label: 'F-05 Reconciliation', icon: '⚖️',  section: 'trading' },
-  { path: '/f06',        label: 'F-06 Error Trade GL', icon: '⚠️',  section: 'trading' },
-  { path: '/users',      label: 'User Management',     icon: '👤', section: 'admin', adminOnly: true },
+  { path: '/dashboard',  label: 'Dashboard',         icon: '⬛', section: 'overview' },
+  { path: '/f04',        label: 'F-04 Mandate Import',   icon: '📋', section: 'trading' },
+  { path: '/reconcile',  label: 'F-05 Reconciliation',    icon: '⚖️',  section: 'trading' },
+  // { path: '/f05',        label: 'F-05 Trade Report',   icon: '📊', section: 'trading' },
+  { path: '/f06',        label: 'F-06 Error Trade GL',   icon: '⚠️',  section: 'trading' },
+  // { path: '/reports',    label: 'Reports',             icon: '📁', section: 'reports' },
 ]
-
-const SECTIONS = {
-  overview: 'Overview',
-  trading:  'Trading Controls',
-  admin:    'Administration',
-}
 
 
 
