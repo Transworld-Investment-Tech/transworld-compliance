@@ -17,8 +17,27 @@ const SURFACE  = '#f7f8fa'
 
 function fmtDate(d) {
   if (!d) return '—'
-  const s = String(d), safe = s.length === 10 ? s + 'T12:00:00' : s
+  const s = String(d)
+  // DD/MM/YYYY (stored by ReconciliationUpload fmtDate)
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+    const [dd, mm, yyyy] = s.split('/')
+    return new Date(`${yyyy}-${mm}-${dd}T12:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  }
+  const safe = s.length === 10 ? s + 'T12:00:00' : s
   return new Date(safe).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+// Normalise any date format → YYYY-MM-DD for key building and comparisons
+function normDate(d) {
+  if (!d) return ''
+  const s = String(d).trim()
+  // DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+    const [dd, mm, yyyy] = s.split('/')
+    return `${yyyy}-${mm}-${dd}`
+  }
+  // Already YYYY-MM-DD or YYYY-MM-DDThh:mm:ss
+  return s.slice(0, 10)
 }
 function fmtN(v) { return (v == null || v === '') ? '—' : Number(v).toLocaleString() }
 function fmtNGN(v) {
@@ -89,7 +108,7 @@ function runDetection({ f04Lines, f05Lines, csdMap }) {
 
   const execMap = {}
   for (const e of executed) {
-    const key = `${e.cscs_acc_num}|${e.security}|${e.effective_date}`
+    const key = `${e.cscs_acc_num}|${e.security}|${normDate(e.effective_date)}`
     if (!execMap[key]) execMap[key] = []; execMap[key].push(e)
   }
   const f04StockMap = {}
@@ -100,7 +119,7 @@ function runDetection({ f04Lines, f05Lines, csdMap }) {
 
   // Rule 1 — Duplicate
   for (const ej of notJobbed) {
-    const key = `${ej.cscs_acc_num}|${ej.security}|${ej.effective_date}`
+    const key = `${ej.cscs_acc_num}|${ej.security}|${normDate(ej.effective_date)}`
     const execs = execMap[key] || []
     for (const ex of execs) {
       if (Number(ex.units) !== Number(ej.units)) continue
@@ -111,7 +130,7 @@ function runDetection({ f04Lines, f05Lines, csdMap }) {
         id: ++id, rule: 'duplicate', errorType: 'duplicate',
         urgency: classifyUrgency(impact || 50000),
         client: ej.client, cscs: ej.cscs_acc_num,
-        security: ej.security, date: ej.effective_date,
+        security: ej.security, date: normDate(ej.effective_date),
         side: ex.order_type, units: Number(ex.units),
         price, impact, hasCSD: csdHits.length > 0,
         description: `${ej.security} ${ex.order_type} ${fmtN(ex.units)} units on ${fmtDate(ej.effective_date)} appears in BOTH Fully Executed (jobbing desk) AND Executed Not Jobbed (e-trade portal). ${csdHits.length >= 2 ? `CSD confirms ${csdHits.length} settlements of the same trade.` : 'Upload CSD Trade Log to confirm duplicate settlement.'}`,
@@ -140,7 +159,7 @@ function runDetection({ f04Lines, f05Lines, csdMap }) {
       id: ++id, rule: 'partial_open', errorType: 'omitted',
       urgency: rolled ? 'STANDARD' : classifyUrgency(impact || 50000),
       client: p.client, cscs: p.cscs_acc_num,
-      security: p.security, date: p.effective_date,
+      security: p.security, date: normDate(p.effective_date),
       side: p.order_type, units: Number(p.units_jobbed),
       price, impact, hasCSD: csdHits.length > 0,
       outstanding, traded: Number(p.units_traded), pct, rolled,
@@ -155,11 +174,11 @@ function runDetection({ f04Lines, f05Lines, csdMap }) {
 
   // Rule 3 — E-trade with no mandate
   for (const e of notJobbed) {
-    const dupKey = `${e.cscs_acc_num}|${e.security}|${e.effective_date}`
+    const dupKey = `${e.cscs_acc_num}|${e.security}|${normDate(e.effective_date)}`
     if (execMap[dupKey]) continue
     const f04Key = `${e.cscs_acc_num}|${e.security}`
     if (f04StockMap[f04Key]) continue
-    const csdKey  = `${e.cscs_acc_num}|${e.security}|${e.effective_date}`
+    const csdKey  = `${e.cscs_acc_num}|${e.security}|${normDate(e.effective_date)}`
     const csdHits = csdMap ? (csdMap[csdKey] || []) : []
     const price   = csdHits[0]?.price || 0
     const impact  = price > 0 ? (Number(e.units) || 0) * price : 0
@@ -167,7 +186,7 @@ function runDetection({ f04Lines, f05Lines, csdMap }) {
       id: ++id, rule: 'no_mandate', errorType: 'unauthorised',
       urgency: classifyUrgency(impact || 50000),
       client: e.client, cscs: e.cscs_acc_num,
-      security: e.security, date: e.effective_date,
+      security: e.security, date: normDate(e.effective_date),
       side: e.order_type || 'MIXED', units: Number(e.units) || 0,
       price, impact, hasCSD: csdHits.length > 0,
       description: `Trade executed via e-trade portal with no F-04 mandate on file for ${e.client} — ${e.security} — ${fmtN(e.units)} units on ${fmtDate(e.effective_date)}. No jobbing mandate found in this date's F-04 or any prior F-04. Requires review.`,
