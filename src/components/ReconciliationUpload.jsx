@@ -877,7 +877,7 @@ function SessionModal({ session, onClose }) {
             </div>
           )}
 
-          {['fully_executed', 'partial', 'not_jobbed'].map(key => {
+          {['fully_executed', 'partial', 'not_jobbed', 'unexecuted'].map(key => {
             const lines = bySection[key]
             if (!lines.length) return null
             const cfg = SECTIONS[key]
@@ -902,6 +902,19 @@ function SessionModal({ session, onClose }) {
                       OrderType: l.order_type, Security: l.security,
                       UnitsJobbed: l.units_jobbed, UnitsTraded: l.units_traded,
                       UnitsOutstanding: l.units_outstanding,
+                    }))} />
+                  ) : key === 'unexecuted' ? (
+                    <UnexecutedTable rows={lines.map(l => ({
+                      RefNo:         l.ref_no,
+                      EffectiveDate: l.effective_date,
+                      ExpiryDate:    l.expiry_date,
+                      Client:        l.client,
+                      CSCSNo:        l.cscs_acc_num,
+                      Stock:         l.security,
+                      ExecOrder:     l.order_type,
+                      JobbedUnits:   l.units,
+                      EnteredBy:     l.entered_by,
+                      ApprovedBy:    l.approved_by,
                     }))} />
                   ) : (
                     <StandardTable rows={lines.map(l => ({
