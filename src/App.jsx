@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage'
 import F04ImportPage from './pages/F04ImportPage'
 import ReconciliationPage from './pages/ReconciliationPage'
 import F06Page from './pages/F06Page'
+import UsersPage from './pages/UsersPage'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = loading
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/f04" element={<F04ImportPage user={session.user} />} />
         <Route path="/reconcile" element={<ReconciliationPage user={session.user} />} />
         <Route path="/f06" element={<F06Page user={session.user} />} />
+        <Route path="/users" element={<UsersPage user={session.user} />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Shell>

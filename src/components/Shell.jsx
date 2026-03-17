@@ -1,6 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+
+const ROLE_LABELS = {
+  admin:            { label: 'Admin',             color: '#c9a84c' },
+  operations:       { label: 'Operations',         color: '#1a7a4a' },
+  coo:              { label: 'Chief Ops Officer',   color: '#1565c0' },
+  compliance:       { label: 'Compliance Officer',  color: '#6d28d9' },
+  internal_control: { label: 'Internal Control',   color: '#374151' },
+}
 
 const NAV_ITEMS = [
   { path: '/dashboard',  label: 'Dashboard',         icon: '⬛', section: 'overview' },
@@ -11,15 +19,18 @@ const NAV_ITEMS = [
   // { path: '/reports',    label: 'Reports',             icon: '📁', section: 'reports' },
 ]
 
-const SECTIONS = {
-  overview: 'Overview',
-  trading:  'Trading Controls',
-  reports:  'Reports',
-}
+
 
 export default function Shell({ user, children }) {
   const [signingOut, setSigningOut] = useState(false)
+  const [userRole,   setUserRole]   = useState(null)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!user?.id) return
+    supabase.from('user_profiles').select('role, full_name').eq('id', user.id).single()
+      .then(({ data }) => { if (data) setUserRole(data.role) })
+  }, [user?.id])
 
   async function handleSignOut() {
     setSigningOut(true)
@@ -27,7 +38,8 @@ export default function Shell({ user, children }) {
     navigate('/')
   }
 
-  const grouped = NAV_ITEMS.reduce((acc, item) => {
+  const visibleItems = NAV_ITEMS.filter(i => !i.adminOnly || userRole === 'admin')
+  const grouped = visibleItems.reduce((acc, item) => {
     if (!acc[item.section]) acc[item.section] = []
     acc[item.section].push(item)
     return acc
@@ -121,6 +133,11 @@ export default function Shell({ user, children }) {
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
               }}>
                 {userEmail}
+              {userRole && (
+                <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: ROLE_LABELS[userRole]?.color || '#6b7280', marginTop: 2 }}>
+                  {ROLE_LABELS[userRole]?.label}
+                </div>
+              )}
               </div>
             </div>
           </div>
