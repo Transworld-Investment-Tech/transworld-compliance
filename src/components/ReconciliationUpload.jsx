@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import * as XLSX from 'xlsx'
 import { printDailyF05 } from '../lib/f05Print'
+import { HelpButton } from './HelpSystem'
 import F05ReportGenerator from './F05ReportGenerator'
 
 // ── Constants ────────────────────────────────────────────────────────────────

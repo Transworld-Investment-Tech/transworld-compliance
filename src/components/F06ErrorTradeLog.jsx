@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { HelpButton } from './HelpSystem'
 import { supabase } from '../lib/supabase'
 import F06DetectionModule from './F06DetectionModule'
 

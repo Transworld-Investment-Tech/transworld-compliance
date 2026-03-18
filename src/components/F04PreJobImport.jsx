@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import F04ReportGenerator from "./F04ReportGenerator";
+import { HelpButton } from "./HelpSystem";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -313,6 +314,7 @@ Rules:
             Pre-job import · AI extraction · Compliance approval
           </div>
         </div>
+        <HelpButton pageKey="f04" style={{ marginLeft: "auto", marginRight: stage !== "upload" && stage !== "extracting" ? 12 : 0 }} />
         {stage !== "upload" && stage !== "extracting" && (
           <button onClick={reset} style={{
             marginLeft: "auto", background: "transparent", border: `1px solid #8fa3c0`,

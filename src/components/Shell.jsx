@@ -18,6 +18,8 @@ const NAV_ITEMS = [
   { path: '/users',      label: 'User Management',     icon: '👤', section: 'admin', adminOnly: true },
 ]
 
+const HELP_NAV = { path: '/help', label: 'Help & Guide', icon: '❓' }
+
 const SECTIONS = {
   overview: 'Overview',
   trading:  'Trading Controls',
@@ -119,6 +121,20 @@ export default function Shell({ user, children }) {
             </div>
           ))}
         </nav>
+
+        {/* Help link */}
+        <div style={{ padding: '8px 0', borderTop: '1px solid rgba(255,255,255,0.07)', marginTop: 'auto' }}>
+          <NavLink to="/help" style={({ isActive }) => ({
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '9px 20px', fontSize: 13, fontWeight: 500,
+            color: isActive ? 'var(--gold)' : 'rgba(255,255,255,0.5)',
+            background: isActive ? 'rgba(201,168,76,0.1)' : 'transparent',
+            borderLeft: isActive ? '3px solid var(--gold)' : '3px solid transparent',
+            textDecoration: 'none',
+          })}>
+            <span style={{ fontSize: 14 }}>❓</span> Help & Guide
+          </NavLink>
+        </div>
 
         {/* User / Sign out */}
         <div style={{

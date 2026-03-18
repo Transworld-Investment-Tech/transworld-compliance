@@ -9,6 +9,7 @@ import ReconciliationPage from './pages/ReconciliationPage'
 import F06Page from './pages/F06Page'
 import UsersPage from './pages/UsersPage'
 import SetPasswordPage from './pages/SetPasswordPage'
+import HelpPage from './pages/HelpPage'
 
 export default function App() {
   const [session,      setSession]      = useState(undefined)
@@ -66,6 +67,7 @@ export default function App() {
         <Route path="/f06"             element={<F06Page user={session.user} />} />
         <Route path="/users"           element={<UsersPage user={session.user} />} />
         <Route path="/change-password" element={<SetPasswordPage mode="change" />} />
+        <Route path="/help" element={<HelpPage />} />
         <Route path="*"                element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Shell>
