@@ -4,7 +4,7 @@ export default async function handler(req, res) {
   const ssoToken = req.query.sso_token || (req.body && req.body.sso_token)
 
   if (!ssoToken) {
-    return res.redirect('/login?error=missing_token')
+    return res.status(400).json({ error: 'Missing SSO token' })
   }
 
   const workspaceSsoUrl = process.env.WORKSPACE_SSO_URL
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Verify token with workspace
+    // Step 1: Verify token with workspace
     const verifyRes = await fetch(workspaceSsoUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -29,53 +29,68 @@ export default async function handler(req, res) {
     })
 
     if (!verifyRes.ok) {
-      return res.redirect('/login?error=sso_failed')
+      const text = await verifyRes.text()
+      return res.status(401).json({ error: 'Token verify failed', status: verifyRes.status, body: text })
     }
 
-    const { email } = await verifyRes.json()
+    const verifyData = await verifyRes.json()
+    const email = verifyData.email
     if (!email) {
-      return res.redirect('/login?error=sso_failed')
+      return res.status(400).json({ error: 'No email in verify response', data: verifyData })
     }
 
+    // Step 2: Supabase admin client
     const admin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    // Check if user exists in Supabase Auth
-    const { data: users } = await admin.auth.admin.listUsers()
+    // Step 3: Check if user exists
+    const { data: users, error: listErr } = await admin.auth.admin.listUsers()
+    if (listErr) {
+      return res.status(500).json({ error: 'listUsers failed', detail: listErr.message })
+    }
     let user = users?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase())
 
-    // Auto-create if not found
+    // Step 4: Auto-create if not found
     if (!user) {
       const { data: created, error: createErr } = await admin.auth.admin.createUser({
         email: email.toLowerCase(),
         email_confirm: true,
       })
       if (createErr) {
-        return res.redirect('/login?error=sso_failed')
+        return res.status(500).json({ error: 'createUser failed', detail: createErr.message })
       }
       user = created.user
     }
 
-    // Generate magic link for session
+    // Step 5: Generate magic link
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
       type: 'magiclink',
       email: email.toLowerCase(),
     })
 
-    if (linkErr || !linkData?.properties?.hashed_token) {
-      return res.redirect('/login?error=sso_failed')
+    if (linkErr) {
+      return res.status(500).json({ error: 'generateLink failed', detail: linkErr.message })
     }
 
-    // Redirect to Supabase auth confirm
+    if (!linkData?.properties?.hashed_token) {
+      return res.status(500).json({ error: 'No hashed_token in link data', data: JSON.stringify(linkData) })
+    }
+
+    // Step 6: Redirect to Supabase verify
     const confirmUrl = new URL(`${supabaseUrl}/auth/v1/verify`)
     confirmUrl.searchParams.set('token', linkData.properties.hashed_token)
     confirmUrl.searchParams.set('type', 'magiclink')
-    confirmUrl.searchParams.set('redirect_to', `https://transworld-compliance.vercel.app/dashboard`)
+    confirmUrl.searchParams.set('redirect_to', 'https://transworld-compliance.vercel.app/dashboard')
 
-    return res.redirect(confirmUrl.toString())
+    return res.status(200).json({ 
+      debug: true,
+      message: 'SSO flow completed — redirect URL below',
+      redirect_url: confirmUrl.toString(),
+      email,
+      user_id: user.id,
+    })
   } catch (err) {
-    console.error('SSO error:', err)
-    return res.redirect('/login?error=sso_failed')
+    return res.status(500).json({ error: 'SSO exception', detail: err.message, stack: err.stack })
   }
 }
