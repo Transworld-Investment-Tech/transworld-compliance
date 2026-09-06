@@ -17,6 +17,32 @@ export default async function handler(req, res) {
     auth: { autoRefreshToken: false, persistSession: false }
   })
 
+  // ── Authorisation gate ────────────────────────────────────────────────────
+  // Every action requires a valid Supabase session token belonging to an
+  // ACTIVE ADMIN. The portal sends it as an Authorization: Bearer header.
+  // Without this gate, anyone who discovers the URL could create admin
+  // accounts or reset passwords.
+  const authHeader = req.headers.authorization || ''
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+  if (!token) {
+    return res.status(401).json({ error: 'Not authorised. Please sign in again.' })
+  }
+
+  const { data: userData, error: userErr } = await admin.auth.getUser(token)
+  if (userErr || !userData?.user) {
+    return res.status(401).json({ error: 'Session invalid or expired. Please sign in again.' })
+  }
+
+  const { data: callerProfile } = await admin
+    .from('user_profiles')
+    .select('role, is_active')
+    .eq('id', userData.user.id)
+    .single()
+
+  if (!callerProfile || callerProfile.role !== 'admin' || callerProfile.is_active === false) {
+    return res.status(403).json({ error: 'Admin access required.' })
+  }
+
   const { action, payload } = req.body
 
   try {

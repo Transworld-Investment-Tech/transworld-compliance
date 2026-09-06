@@ -61,7 +61,10 @@ export default function F04PreJobImport({ currentUser }) {
 
   // ── File handling ───────────────────────────────────────────────────────
   const handleFile = useCallback((file) => {
-    if (!file || file.type !== "application/pdf") {
+    // Accept by MIME type OR .pdf extension — some download paths (e.g. saving
+    // from the NaYa print dialog) give the browser an empty MIME type.
+    const isPdf = file && (file.type === "application/pdf" || /\.pdf$/i.test(file.name || ""));
+    if (!isPdf) {
       setExtractionError("Please upload a PDF file.");
       return;
     }
@@ -131,7 +134,7 @@ Rules:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 4000,
           system: systemPrompt,
           messages: [{
@@ -148,6 +151,17 @@ Rules:
       });
 
       const data = await response.json();
+
+      // Surface API errors as readable messages (model retired, key invalid,
+      // rate limited, etc.) instead of crashing on a missing content array.
+      if (!response.ok || data.error) {
+        const raw = data?.error?.message || data?.error || `AI service error (HTTP ${response.status})`;
+        throw new Error(typeof raw === "string" ? raw : JSON.stringify(raw));
+      }
+      if (!Array.isArray(data.content)) {
+        throw new Error("AI service returned an unexpected response. Please try again.");
+      }
+
       const rawText = data.content
         .filter(b => b.type === "text")
         .map(b => b.text)

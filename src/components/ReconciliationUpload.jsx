@@ -20,19 +20,75 @@ const BLUE_BG   = '#e3f0ff'
 const RED       = '#c0392b'
 const RED_BG    = '#fdecea'
 
-// ── Section detection ────────────────────────────────────────────────────────
-// NaYa produces 4 structurally distinct file types.
-function detectSection(rows, headers) {
-  const colCount   = headers.filter(Boolean).length
-  const orderTypes = new Set(rows.map(r => r.OrderType).filter(Boolean))
-  const hasMixed   = orderTypes.has('MIXED')
-  const hasPartial = headers.includes('UnitsJobbed')       // Partial utilization
-  const isJobHist  = headers.includes('RefNo') && headers.includes('JobbedUnits')  // Job Orders History
+// ── Header canonicalisation ──────────────────────────────────────────────────
+// Known NaYa column headers, keyed by normalised form (lowercase, no spaces,
+// underscores, dots or dashes). Row objects are always built with the canonical
+// names on the right, so downstream code can rely on r.OrderType, r.UnitsJobbed
+// etc. regardless of casing/spacing variations in the export.
+const CANON_HEADERS = {
+  effectivedate:     'EffectiveDate',
+  client:            'Client',
+  clientname:        'Client',
+  cscsaccnum:        'CSCSAccNum',
+  cscsaccountnum:    'CSCSAccNum',
+  cscsaccountnumber: 'CSCSAccNum',
+  ordertype:         'OrderType',
+  security:          'Security',
+  units:             'Units',
+  unitsjobbed:       'UnitsJobbed',
+  unitstraded:       'UnitsTraded',
+  unitsoutstanding:  'UnitsOutstanding',
+  refno:             'RefNo',
+  expirydate:        'ExpiryDate',
+  cscsno:            'CSCSNo',
+  stock:             'Stock',
+  execorder:         'ExecOrder',
+  jobbedunits:       'JobbedUnits',
+  enteredby:         'EnteredBy',
+  approvedby:        'ApprovedBy',
+}
 
-  if (isJobHist)                           return 'job_history'
-  if (hasPartial)                          return 'partial'
-  if (colCount === 6 && hasMixed)          return 'not_jobbed'
-  if (colCount === 6 && !hasMixed)         return 'fully_executed'
+const normHeader = h => String(h || '').toLowerCase().replace(/[\s_.-]+/g, '')
+
+// Find the header row: first row (within the first 8) where at least 3 cells
+// match known NaYa headers. NaYa normally puts a title on row 0 and headers on
+// row 1, but re-saved files and export variations can shift this.
+function findHeaderRow(raw) {
+  const limit = Math.min(raw.length, 8)
+  for (let i = 0; i < limit; i++) {
+    const cells = (raw[i] || []).map(normHeader)
+    const hits  = cells.filter(c => CANON_HEADERS[c]).length
+    if (hits >= 3) return i
+  }
+  return -1
+}
+
+// ── Section detection ────────────────────────────────────────────────────────
+// NaYa produces 4 file types. The report title above the table is the most
+// reliable signal; header structure is the fallback. The old MIXED-content
+// check is used only as a last resort, because it misfires on days when the
+// Not Jobbed file happens to contain no e-trade (MIXED) rows.
+function detectSection(rows, headers, titleText) {
+  const t = normHeader(titleText)
+
+  // 1) Title-based (primary)
+  if (t) {
+    if (t.includes('jobordershistory') || t.includes('jobhistory') || t.includes('ordershistory')) return 'job_history'
+    if (t.includes('notjobbed'))      return 'not_jobbed'
+    if (t.includes('partial'))        return 'partial'
+    if (t.includes('fullyexecuted'))  return 'fully_executed'
+  }
+
+  // 2) Structural fallback (canonical headers)
+  const has = h => headers.includes(h)
+  if (has('RefNo') && has('JobbedUnits')) return 'job_history'
+  if (has('UnitsJobbed'))                 return 'partial'
+
+  const coreUtil = has('EffectiveDate') && has('OrderType') && has('Security') && has('Units')
+  if (coreUtil) {
+    const hasMixed = rows.some(r => r.OrderType === 'MIXED')
+    return hasMixed ? 'not_jobbed' : 'fully_executed'
+  }
   return 'unknown'
 }
 
@@ -46,18 +102,38 @@ function parseXLSX(file) {
         const ws    = wb.Sheets[wb.SheetNames[0]]
         const raw   = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null })
 
-        // Row 1 = title, Row 2 = headers, Row 3+ = data
-        const headers = (raw[1] || []).map(h => h ? String(h).trim() : null)
-        const dataRows = raw.slice(2).filter(row => row.some(c => c !== null))
+        const headerRowIdx = findHeaderRow(raw)
+        if (headerRowIdx === -1) {
+          resolve({
+            section: 'unknown', headers: [], rows: [], fileName: file.name,
+            diag: 'no recognisable NaYa column headers found in the first rows of the sheet',
+          })
+          return
+        }
 
+        // Everything above the header row is the report title (e.g.
+        // "Jobbing Book Utilization Report — Fully Executed")
+        const titleText = raw.slice(0, headerRowIdx)
+          .flat().filter(Boolean).map(String).join(' ')
+
+        // Canonicalise headers so downstream code always sees standard names
+        const headers = (raw[headerRowIdx] || []).map(h => {
+          const canon = CANON_HEADERS[normHeader(h)]
+          return canon || (h ? String(h).trim() : null)
+        })
+
+        const dataRows = raw.slice(headerRowIdx + 1).filter(row => row.some(c => c !== null))
         const rows = dataRows.map(row => {
           const obj = {}
           headers.forEach((h, i) => { if (h) obj[h] = row[i] })
           return obj
         })
 
-        const section = detectSection(rows, headers)
-        resolve({ section, headers, rows, fileName: file.name })
+        const section = detectSection(rows, headers, titleText)
+        const diag = section === 'unknown'
+          ? `headers found: ${headers.filter(Boolean).join(', ') || 'none'}`
+          : null
+        resolve({ section, headers, rows, fileName: file.name, diag })
       } catch (err) {
         reject(err)
       }
@@ -130,7 +206,7 @@ export default function ReconciliationUpload({ currentUser }) {
   const processFiles = useCallback(async (rawFiles) => {
     setParseError('')
     const xlsxFiles = Array.from(rawFiles).filter(f =>
-      f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+      /\.(xlsx|xls)$/i.test(f.name)
     )
     if (xlsxFiles.length === 0) {
       setParseError('Please upload Excel (.xlsx) files exported from NaYa.')
@@ -147,7 +223,13 @@ export default function ReconciliationUpload({ currentUser }) {
       // Validate — check for unknown sections
       const unknown = parsed.filter(p => p.section === 'unknown')
       if (unknown.length > 0) {
-        setParseError(`Could not identify file type for: ${unknown.map(u => u.fileName).join(', ')}.`)
+        const detail = unknown
+          .map(u => `${u.fileName} (${u.diag || 'unrecognised structure'})`)
+          .join('; ')
+        setParseError(
+          `Could not identify file type for: ${detail}. ` +
+          `Please download the files fresh from NaYa and upload them without opening or re-saving them first.`
+        )
         return
       }
 

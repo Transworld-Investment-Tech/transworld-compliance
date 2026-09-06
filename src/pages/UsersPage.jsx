@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
 
 const NAV      = '#0d1f3c'
 const GOLD     = '#c9a84c'
@@ -22,9 +23,13 @@ const ROLES = [
 const roleCfg = v => ROLES.find(r => r.value === v) || ROLES[0]
 
 async function api(action, payload = {}) {
+  const { data: { session } } = await supabase.auth.getSession()
   const res = await fetch('/api/admin-users', {
     method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
     body:    JSON.stringify({ action, payload }),
   })
   return res.json()
